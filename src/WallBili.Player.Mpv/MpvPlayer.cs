@@ -36,6 +36,7 @@ public sealed class MpvPlayer : IAsyncDisposable
     {
         _options = options ?? new();
         if (string.IsNullOrWhiteSpace(_options.ExecutablePath) ||
+            _options.WindowId is <= 0 || (_options.WindowId is not null && !OperatingSystem.IsWindows()) ||
             _options.StartupTimeout <= TimeSpan.Zero || _options.CommandTimeout <= TimeSpan.Zero ||
             _options.LoadTimeout <= TimeSpan.Zero)
             throw new ArgumentException("A player executable and positive timeouts are required.", nameof(options));
@@ -44,6 +45,7 @@ public sealed class MpvPlayer : IAsyncDisposable
     /// <remarks>Raised on the IPC reader. Handlers should dispatch UI work and must not block.</remarks>
     public event EventHandler<MpvEventArgs>? EventReceived;
     public event EventHandler<PlaybackEndedEventArgs>? PlaybackEnded;
+    public event EventHandler? ConnectionClosed;
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -86,6 +88,8 @@ public sealed class MpvPlayer : IAsyncDisposable
             // Full Windows mpv builds expose the built-in ytdl hook. Resources are already resolved
             // by our native adapter. The cloud validation build has no Lua or ytdl hook at all.
             if (OperatingSystem.IsWindows()) startInfo.ArgumentList.Add("--ytdl=no");
+            if (_options.WindowId is { } windowId)
+                startInfo.ArgumentList.Add("--wid=" + windowId.ToString(System.Globalization.CultureInfo.InvariantCulture));
             if (_options.Headless)
             {
                 startInfo.ArgumentList.Add("--vo=null");
@@ -169,6 +173,16 @@ public sealed class MpvPlayer : IAsyncDisposable
 
     public Task PauseAsync(CancellationToken cancellationToken = default) => SetPauseAsync(true, cancellationToken);
     public Task ResumeAsync(CancellationToken cancellationToken = default) => SetPauseAsync(false, cancellationToken);
+
+    public async Task StopPlaybackAsync(CancellationToken cancellationToken = default) =>
+        await CommandAsync(["stop"], cancellationToken).ConfigureAwait(false);
+
+    public async Task SetVolumeAsync(double volume, CancellationToken cancellationToken = default)
+    {
+        if (!double.IsFinite(volume) || volume is < 0 or > 100)
+            throw new MpvException(MpvErrorCode.InvalidArgument, "Volume must be between 0 and 100.");
+        await CommandAsync(["set_property", "volume", volume], cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default)
     {
@@ -318,6 +332,7 @@ public sealed class MpvPlayer : IAsyncDisposable
                 request.TrySetException(disconnected);
             lock (_loadSync)
                 _loadCompletion?.TrySetException(disconnected);
+            try { ConnectionClosed?.Invoke(this, EventArgs.Empty); } catch { }
         }
     }
 
@@ -333,7 +348,8 @@ public sealed class MpvPlayer : IAsyncDisposable
         if (eventName == "end-file")
         {
             var reason = data.TryGetProperty("reason", out var value) ? value.GetString() ?? "unknown" : "unknown";
-            RaiseSafely(PlaybackEnded, new PlaybackEndedEventArgs(reason, reason == "error"));
+            var entryId = data.TryGetProperty("playlist_entry_id", out var entry) && entry.TryGetInt64(out var id) ? (long?)id : null;
+            RaiseSafely(PlaybackEnded, new PlaybackEndedEventArgs(reason, reason == "error", entryId));
         }
         RaiseSafely(EventReceived, new MpvEventArgs(eventName, data));
     }

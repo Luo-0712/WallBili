@@ -1,67 +1,111 @@
 <Window x:Class="WallBili.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="WallBili · 第一阶段调试播放器" Width="880" Height="720"
-        MinWidth="700" MinHeight="640" Background="#F5F6F8"
-        Closing="Window_Closing">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="28">
-            <TextBlock Text="WallBili" FontSize="30" FontWeight="SemiBold" Foreground="#17212D" />
-            <TextBlock Text="第一阶段 · Bilibili MP4 / DASH 播放链路" FontSize="14" Foreground="#536170" Margin="0,5,0,24" />
-
-            <TextBlock Text="视频链接 / BV 号" FontWeight="SemiBold" Margin="0,0,0,8" />
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBox x:Name="VideoInput" ToolTip="输入 bilibili.com/video/BV… 链接或 BV 号" KeyDown="VideoInput_KeyDown" />
-                <Button x:Name="FetchButton" Grid.Column="1" Content="获取视频" Click="Fetch_Click" Margin="12,0,0,0" IsDefault="True" />
+        Title="WallBili · 合集与播放队列" Width="1180" Height="850" MinWidth="960" MinHeight="720"
+        Background="#F5F6F8" Loaded="Window_Loaded" Closing="Window_Closing">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <DockPanel Margin="0,0,0,16">
+            <TextBlock Text="WallBili" FontSize="28" FontWeight="SemiBold" Foreground="#17212D"/>
+            <TextBlock Text="合集、目录与连续播放" VerticalAlignment="Center" Foreground="#536170" Margin="18,0,0,0"/>
+        </DockPanel>
+        <StackPanel Grid.Row="1" x:Name="ImportPanel" Margin="0,0,0,16">
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="视频链接 / BV" VerticalAlignment="Center"/>
+                <TextBox x:Name="VideoInput" Grid.Column="1" ToolTip="导入视频及其全部分 P"/>
+                <Button Grid.Column="2" Content="添加视频" Click="ImportVideo_Click" Margin="8,0,0,0"/>
             </Grid>
-
-            <Border Background="White" CornerRadius="8" Padding="18" Margin="0,18,0,18" BorderBrush="#E0E4EA" BorderThickness="1">
-                <StackPanel>
-                    <TextBlock x:Name="VideoTitle" Text="输入视频后获取信息" FontSize="19" FontWeight="SemiBold" />
-                    <TextBlock x:Name="VideoMetadata" Text="支持公开且当前可访问的视频。播放将在独立 mpv 窗口中打开。" Foreground="#536170" Margin="0,8,0,16" />
-                    <TextBlock Text="选择分 P" Margin="0,0,0,6" />
-                    <ComboBox x:Name="PartsBox" MinHeight="34" Padding="7" IsEnabled="False" SelectionChanged="PartsBox_SelectionChanged">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock>
-                                    <Run Text="P" /><Run Text="{Binding Page, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Title, Mode=OneWay}" />
-                                </TextBlock>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <TextBlock x:Name="SelectedPartText" Foreground="#536170" Margin="0,7,0,0" />
-                </StackPanel>
-            </Border>
-
-            <TextBlock Text="mpv 可执行文件" FontWeight="SemiBold" Margin="0,0,0,8" />
-            <TextBox x:Name="MpvPathInput" ToolTip="填写 mpv.exe 完整路径，或将 mpv 加入 PATH；默认读取 MPV_PATH。" />
-            <TextBlock Text="Windows 上可填写 mpv.exe 的完整路径；也可使用 PATH 或 MPV_PATH。" Foreground="#536170" Margin="0,5,0,16" />
-
-            <WrapPanel Margin="0,0,0,15">
-                <Button x:Name="PlayButton" Content="播放所选分 P" Click="Play_Click" IsEnabled="False" />
-                <Button x:Name="PauseButton" Content="暂停" Click="Pause_Click" IsEnabled="False" />
-                <Button x:Name="ResumeButton" Content="继续" Click="Resume_Click" IsEnabled="False" />
-                <Button x:Name="RefreshButton" Content="重新解析并恢复进度" Click="Refresh_Click" IsEnabled="False" />
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="合集 / 系列链接" VerticalAlignment="Center"/>
+                <TextBox x:Name="CollectionInput" Grid.Column="1" ToolTip="space.bilibili.com/UP主ID/lists/合集ID?type=season 或 type=series"/>
+                <Button Grid.Column="2" Content="导入合集" Click="ImportCollection_Click" Margin="8,0,0,0"/>
+            </Grid>
+            <WrapPanel>
+                <TextBlock Text="也可填写 UP 主 ID" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBox x:Name="UploaderInput" Width="125"/>
+                <TextBlock Text="合集 ID" VerticalAlignment="Center" Margin="12,0,8,0"/>
+                <TextBox x:Name="CollectionIdInput" Width="125"/>
+                <ComboBox x:Name="KindBox" SelectedIndex="0" Width="100" Margin="10,0,8,0" VerticalContentAlignment="Center">
+                    <ComboBoxItem Content="合集"/><ComboBoxItem Content="系列"/>
+                </ComboBox>
+                <Button Content="按 ID 导入" Click="ImportIds_Click"/>
             </WrapPanel>
-            <ProgressBar x:Name="PlaybackProgress" Height="6" Minimum="0" Maximum="1" Value="0" />
-            <TextBlock x:Name="PositionText" Text="00:00 / 00:00" Foreground="#536170" Margin="0,7,0,12" />
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
-                <TextBlock Text="跳转到（秒）" VerticalAlignment="Center" Margin="0,0,10,0" />
-                <TextBox x:Name="SeekInput" Text="0" Width="100" IsEnabled="False" />
-                <Button x:Name="SeekButton" Content="跳转" Click="Seek_Click" Margin="10,0,0,0" IsEnabled="False" />
-            </StackPanel>
-
-            <Border Background="#EAF0F8" CornerRadius="6" Padding="14">
-                <StackPanel>
-                    <TextBlock Text="状态" FontWeight="SemiBold" Margin="0,0,0,5" />
-                    <TextBlock x:Name="StatusText" Text="就绪" AutomationProperties.LiveSetting="Polite" />
-                    <TextBlock x:Name="SessionText" Foreground="#536170" Margin="0,6,0,0" />
-                </StackPanel>
-            </Border>
         </StackPanel>
-    </ScrollViewer>
+        <Grid Grid.Row="2" x:Name="ListsPanel">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <DockPanel Margin="0,0,14,0">
+                <TextBlock DockPanel.Dock="Top" Text="我的来源" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <Button Content="刷新所选来源" Click="RefreshSource_Click" Margin="0,0,0,6"/>
+                    <Button Content="移除来源" Click="RemoveSource_Click" Margin="0" ToolTip="目录与队列会保留"/>
+                </StackPanel>
+                <ListBox x:Name="SourcesBox" DisplayMemberPath="Title" SelectionChanged="Sources_Changed"/>
+            </DockPanel>
+            <DockPanel Grid.Column="1" Margin="0,0,14,0">
+                <TextBlock DockPanel.Dock="Top" Text="视频目录" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <Button Content="加入队列" Click="Enqueue_Click"/><Button Content="全部加入" Click="EnqueueAll_Click"/>
+                    <Button Content="↑" Click="EntryUp_Click" ToolTip="目录上移"/><Button Content="↓" Click="EntryDown_Click" ToolTip="目录下移"/>
+                    <Button Content="删除" Click="DeleteEntry_Click"/>
+                </WrapPanel>
+                <DataGrid x:Name="CatalogGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                          SelectionMode="Extended" SelectionUnit="FullRow" HeadersVisibility="Column" CanUserSortColumns="False">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="标题" Binding="{Binding Entry.Title}" Width="*"/>
+                        <DataGridTextColumn Header="UP 主" Binding="{Binding Entry.Uploader}" Width="80"/>
+                        <DataGridTextColumn Header="分 P" Binding="{Binding Entry.Page}" Width="45"/>
+                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="105"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+            <DockPanel Grid.Column="2">
+                <TextBlock x:Name="QueueTitle" DockPanel.Dock="Top" Text="播放队列" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <Button Content="播放所选" Click="PlaySelected_Click"/>
+                    <Button Content="↑" Click="QueueUp_Click" ToolTip="队列上移"/><Button Content="↓" Click="QueueDown_Click" ToolTip="队列下移"/>
+                    <Button Content="移除" Click="RemoveQueue_Click"/>
+                </WrapPanel>
+                <DataGrid x:Name="QueueGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                          SelectionMode="Single" HeadersVisibility="Column" CanUserSortColumns="False" MouseDoubleClick="Queue_DoubleClick">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="" Binding="{Binding Marker}" Width="32"/>
+                        <DataGridTextColumn Header="标题" Binding="{Binding Title}" Width="*"/>
+                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="100"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Grid>
+        <Border Grid.Row="3" Background="White" Padding="16" CornerRadius="8" Margin="0,18,0,12">
+            <StackPanel x:Name="PlayerPanel">
+                <TextBlock x:Name="CurrentText" Text="尚未选择播放项" FontSize="16" FontWeight="SemiBold"/>
+                <TextBlock x:Name="PositionText" Text="00:00 / 00:00" Foreground="#536170" Margin="0,5,0,8"/>
+                <ProgressBar x:Name="Progress" Height="5" Maximum="1" Margin="0,0,0,12"/>
+                <WrapPanel Margin="0,0,0,10">
+                    <Button Content="上一项" Click="Previous_Click"/><Button Content="播放 / 继续" Click="Play_Click"/>
+                    <Button Content="暂停" Click="Pause_Click"/><Button Content="停止" Click="Stop_Click"/>
+                    <Button Content="下一项" Click="Next_Click"/><Button Content="重新取流" Click="Reload_Click"/>
+                    <ComboBox x:Name="ModeBox" Width="100" SelectedIndex="0" SelectionChanged="Mode_Changed" VerticalContentAlignment="Center">
+                        <ComboBoxItem Content="顺序播放"/><ComboBoxItem Content="列表循环"/>
+                    </ComboBox>
+                </WrapPanel>
+                <WrapPanel Margin="0,0,0,10">
+                    <TextBlock Text="跳转（秒）" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox x:Name="SeekInput" Width="85" Text="0"/><Button Content="跳转" Click="Seek_Click" Margin="8,0,18,0"/>
+                    <TextBlock Text="音量" VerticalAlignment="Center"/>
+                    <Slider x:Name="VolumeSlider" Width="130" Minimum="0" Maximum="100" Value="70" VerticalAlignment="Center" Margin="10,0"/>
+                    <Button Content="设置音量" Click="Volume_Click"/>
+                </WrapPanel>
+                <DockPanel>
+                    <TextBlock Text="mpv 路径" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBox x:Name="MpvPathInput" ToolTip="mpv.exe 完整路径；修改后下次加载生效"/>
+                </DockPanel>
+            </StackPanel>
+        </Border>
+        <TextBlock Grid.Row="4" x:Name="StatusText" Text="正在读取本地资料…" Foreground="#536170" AutomationProperties.LiveSetting="Polite"/>
+    </Grid>
 </Window>
