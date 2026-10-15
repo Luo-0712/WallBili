@@ -58,6 +58,12 @@ public sealed class MpvPlayerTests
             Assert.Equal(160, videoParams.GetProperty("w").GetInt32());
             var audioParams = await player.GetPropertyAsync<JsonElement>("audio-params", cancellationToken);
             Assert.Equal(48000, audioParams.GetProperty("samplerate").GetInt32());
+            var originalPid = await player.GetPropertyAsync<int>("pid", cancellationToken);
+            await player.SetVideoFitAsync(true, cancellationToken);
+            Assert.Equal(1, await player.GetPropertyAsync<double>("panscan", cancellationToken));
+            await player.SetVideoFitAsync(false, cancellationToken);
+            Assert.Equal(0, await player.GetPropertyAsync<double>("panscan", cancellationToken));
+            Assert.Equal(originalPid, await player.GetPropertyAsync<int>("pid", cancellationToken));
 
             // Parallel requests exercise request_id matching while unsolicited events arrive.
             var durations = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => player.GetPropertyAsync<double>("duration", cancellationToken)));

@@ -1,16 +1,19 @@
 <Window x:Class="WallBili.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="WallBili · 合集与播放队列" Width="1180" Height="850" MinWidth="960" MinHeight="720"
+        Title="WallBili · 视频桌面" Width="1180" Height="960" MinWidth="960" MinHeight="800"
         Background="#F5F6F8" Loaded="Window_Loaded" Closing="Window_Closing">
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <DockPanel Margin="0,0,0,16">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="收起到托盘" Click="Hide_Click"/><Button Content="退出" Click="Exit_Click"/>
+            </StackPanel>
             <TextBlock Text="WallBili" FontSize="28" FontWeight="SemiBold" Foreground="#17212D"/>
-            <TextBlock Text="合集、目录与连续播放" VerticalAlignment="Center" Foreground="#536170" Margin="18,0,0,0"/>
+            <TextBlock Text="视频桌面与连续播放" VerticalAlignment="Center" Foreground="#536170" Margin="18,0,0,0"/>
         </DockPanel>
         <StackPanel Grid.Row="1" x:Name="ImportPanel" Margin="0,0,0,16">
             <Grid Margin="0,0,0,8">
@@ -106,6 +109,23 @@
                 </DockPanel>
             </StackPanel>
         </Border>
-        <TextBlock Grid.Row="4" x:Name="StatusText" Text="正在读取本地资料…" Foreground="#536170" AutomationProperties.LiveSetting="Polite"/>
+        <Border Grid.Row="4" Background="White" Padding="12" CornerRadius="8" Margin="0,0,0,10">
+            <StackPanel x:Name="DesktopPanel">
+                <WrapPanel Margin="0,0,0,8">
+                    <CheckBox x:Name="WallpaperBox" Content="桌面视频" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                    <ComboBox x:Name="DisplayBox" Width="290" DisplayMemberPath="Label" ToolTip="选择一块屏幕；屏幕离线时暂用主屏"/>
+                    <ComboBox x:Name="FitBox" Width="105" Margin="10,0" SelectedIndex="0">
+                        <ComboBoxItem Content="填充（裁切）"/><ComboBoxItem Content="适应（留边）"/>
+                    </ComboBox>
+                    <Button Content="应用桌面设置" Click="ApplyDesktop_Click"/>
+                </WrapPanel>
+                <WrapPanel Margin="0,0,0,6">
+                    <CheckBox x:Name="ContinueAudioBox" Content="隐藏画面时继续音乐" VerticalAlignment="Center" Margin="0,0,18,0"/>
+                    <CheckBox x:Name="StartupBox" Content="登录后在托盘启动并恢复" VerticalAlignment="Center"/>
+                </WrapPanel>
+                <TextBlock x:Name="DesktopStatus" Foreground="#536170" Text="正在连接桌面…"/>
+            </StackPanel>
+        </Border>
+        <TextBlock Grid.Row="5" x:Name="StatusText" Text="正在读取本地资料…" Foreground="#536170" AutomationProperties.LiveSetting="Polite"/>
     </Grid>
 </Window>

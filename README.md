@@ -2,7 +2,7 @@
 
 面向 Windows 10/11 的 B 站视频壁纸播放器。技术栈为 C# / .NET 10、WPF、SQLite、mpv。
 
-当前分支交付 MVP 阶段二：在阶段一的内容与播放链路上，增加合集/系列导入刷新、分 P 目录、持久化可编辑队列、EOF 连续播放、失败跳过与进度恢复，以及 WPF 操作窗口。[阶段二验证记录](docs/phase2-validation.md)区分自动检查与 Windows 人工验收；阶段一记录保留在 [此处](docs/phase1-validation.md)。真正的桌面视频壁纸属于阶段三。
+当前交付 MVP 阶段三：在已验证的内容、目录与队列之上接入桌面视频宿主、单屏配置、填充/适应、托盘、登录启动、断网/睡眠/Explorer 恢复。用户已确认前两阶段通过；[阶段三验证记录](docs/phase3-validation.md)区分自动检查与尚待 Windows 实机验收的门槛，阶段一、二的历史记录保留。
 
 ## 开发与验证
 
@@ -44,15 +44,23 @@ dotnet run --project tools/WallBili.Probe -- check-queue BV1xx411c7mD BV17x411w7
 dotnet run --project src/WallBili.Desktop -c Release
 ```
 
-也可使用 `pwsh scripts/publish-debug.ps1` 生成 Windows x64 调试包，输出在 `work/windows-debug/`；它需要 .NET 10 Desktop Runtime 和单独安装的 mpv。
+使用 `pwsh scripts/publish-windows.ps1`（Linux 开发环境可用 `bash scripts/publish-windows.sh`）生成 Windows x64 包 `work/windows-phase3.zip`，解压后启动 `app/WallBili.Desktop.exe`。默认需要 .NET 10 Desktop Runtime 和单独安装的 mpv；PowerShell 的 `-SelfContained` 可打包 .NET 运行时。旧 `publish-debug.ps1` 入口保留。
 
 输入视频链接或 BVID 会将全部分 P 导入目录。合集支持 `https://space.bilibili.com/UP主ID/lists/合集ID?type=season`（系列为 `type=series`）及旧版 `channel/collectiondetail?sid=…` / `channel/seriesdetail?sid=…` 链接，也可直接填写 UP 主 ID、合集 ID 和类型。选择来源可以筛选目录；Ctrl/Shift 多选条目加入队列，或点击“全部加入”。目录和队列均可上移、下移、删除；双击队列项开始播放。
 
-支持顺序播放、列表循环、上一项/下一项、暂停/继续、停止、seek、音量和重新取流。mpv 继续使用独立窗口。来源刷新会读取所有分页并展开权威 CID，按 BVID/CID 去重，不重建现有队列或重置进度。元数据无法展开的视频记入来源问题列表，不会捏造 CID；播放失败会显示状态并跳过。手动选择失败项或刷新来源可重试。
+支持顺序播放、列表循环、上一项/下一项、暂停/继续、停止、seek、音量和重新取流。mpv 通过 WallBili 自己的 HWND 输出到桌面，只有一个音视频会话。来源刷新读取所有分页并展开权威 CID，按 BVID/CID 去重，不重建队列或重置进度。元数据无法展开的视频记入来源问题；永久播放失败跳过，临时网络失败保留当前项等待恢复。
 
 目录、来源关系、队列顺序、当前项、播放模式、音量和进度保存到 `%LOCALAPPDATA%\WallBili\library.db`；mpv 路径保存到同目录 `preferences.json`。每五秒和关键操作时保存，正常退出前再保存一次。播放中退出/中断后，下次按内容身份重新取流并恢复；暂停退出后恢复为暂停；点击“停止”后下次不自动播放。异常中断最多可能丢失最后一次检查点之后约五秒的进度，另加正在进行的 IPC/磁盘操作时间。
 
-删除正在播放的队列项会从其删除位置播放后继项；原来暂停则后继项保持暂停。删除最后一项停止，循环模式下也不因删除自动绕回。移除来源保留已导入目录与队列；删除目录条目同时移除其来源关系和全部对应队列项。界面同一会话只允许一个实例写库。关闭应用会清理自身 mpv 进程。
+删除正在播放的队列项会从其删除位置播放后继项；原来暂停则后继项保持暂停。删除最后一项停止，循环模式下也不因删除自动绕回。移除来源保留已导入目录与队列；删除目录条目同时移除其来源关系和全部对应队列项。界面同一会话只允许一个实例写库；再次启动会唤回原窗口。关闭窗口收起到托盘，“退出”清理自身 mpv。
+
+## 桌面与后台使用
+
+选择“桌面视频”、目标显示器和填充/适应后点击“应用桌面设置”。首版承载一块屏幕，所选屏幕离线时暂用主屏；返回后恢复原设备。隐藏画面可继续听音乐，取消相应选项则自动暂停，队列与进度保留。暂停后重新启用画面需手动继续。
+
+托盘提供播放/暂停、下一项、画面显隐、唤回与退出。登录自启动默认关闭，勾选并应用后写入当前用户 Run 项，以托盘模式恢复队列。临时断网/限流采取 2–60 秒退避，同一内容重新取流后恢复进度；mpv 断连、约 45 秒无推进的缓冲、睡眠唤醒与被销毁的桌面输出也从身份和检查点恢复。停止会取消后台重试。
+
+宿主仅使用已存在的 Explorer 壁纸 WorkerW，不创建/重排 Shell 窗口，不修改 Wallpaper Engine。没有候选宿主时明确等待，不能算作壁纸成功；不同 Windows/Wallpaper Engine 布局的实际层叠与图标交互必须按 [阶段三检查表](docs/windows-phase3-checklist.md)观察。两小时稳定性、音画误差与 GPU/资源结论也以实机记录为准。
 
 `check-queue` 是可选联网验收：导入两个视频来源，各选第一 P，跳到末尾两秒，等待真实 EOF 推进，并重新读取 SQLite 检查完成记录；它使用临时数据库且会清理。自动测试使用本地媒体，运行方式见 `scripts/verify.sh` / `scripts/verify.ps1`。具体 Windows 人工步骤见 [阶段二检查表](docs/windows-phase2-checklist.md)。
 
@@ -67,8 +75,8 @@ dotnet run --project src/WallBili.Desktop -c Release
 | `src/WallBili.Core` | 稳定身份、目录导入、队列编辑/调度、恢复策略与存储/播放接口 |
 | `src/WallBili.Infrastructure` | 游客身份、WBI 内容接入、合集链接解析、SQLite 事务存储 |
 | `src/WallBili.Player.Mpv` | 一个音视频播放进程、JSON IPC、队列代际与原生事件关联 |
-| `src/WallBili.Desktop` | WPF 来源、目录、队列与播放控制窗口 |
+| `src/WallBili.Desktop` | WPF 操作窗口、桌面宿主、单屏配置、托盘与系统生命周期 |
 | `tools/WallBili.Probe` | 可重复执行、输出脱敏 JSON 的接入和媒体验证 |
 | `tests/` | 接入行为与 mpv 实际媒体控制测试 |
 
-应用代码按 MIT 发布。没有复制 Biu 的非商业许可实现；采用自行编写的内容适配器。接口协议来源和第三方组件边界见 [来源说明](docs/protocol-and-dependencies.md)。第三方 SQLite 驱动随 NuGet 恢复并锁定；mpv 仍由用户独立安装。后续阶段包括完整桌面壁纸宿主、托盘/自启动、显示与系统生命周期恢复及 Wallpaper Engine 共存验收。
+应用代码按 MIT 发布。没有复制 Biu 的非商业许可实现；采用自行编写的内容适配器。接口协议来源和第三方组件边界见 [来源说明](docs/protocol-and-dependencies.md)。第三方 SQLite 驱动随 NuGet 恢复并锁定；mpv 仍由用户独立安装。复杂多屏拼接、更多来源、自动更新等不属于首版范围。

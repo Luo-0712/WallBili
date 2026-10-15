@@ -3,11 +3,12 @@ using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.Text.Json;
+using System.Net.NetworkInformation;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using Microsoft.Data.Sqlite;
 using WallBili.Core;
 using WallBili.Infrastructure.Bilibili;
@@ -23,10 +24,16 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly LibrarySession _library;
+    private readonly MpvQueuePlayer _player;
+    private readonly DesktopVideoHost _host;
+    private readonly TrayIcon _tray;
+    private DesktopPreferences _preferences;
+    private long _outputHandle;
+    private bool _exitRequested, _suspended, _powerSuspendRequested, _powerResumeRequested, _networkChanged;
+    private bool _outputRebindNeeded;
     private Task _pending = Task.CompletedTask;
-    private bool _busy, _closing, _closed, _rendering, _ready;
+    private bool _busy, _closing, _closed, _rendering, _ready, _loaded;
     private string _mpvPath;
-    private string _savedMpvPath;
     private readonly string _preferencesPath;
 
     public MainWindow()
@@ -34,29 +41,150 @@ public partial class MainWindow : Window
         InitializeComponent();
         var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WallBili");
         _preferencesPath = Path.Combine(directory, "preferences.json");
-        string? savedPath = null;
-        try
-        {
-            if (File.Exists(_preferencesPath)) savedPath = JsonSerializer.Deserialize<DesktopPreferences>(File.ReadAllText(_preferencesPath))?.MpvPath;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
-        _mpvPath = string.IsNullOrWhiteSpace(savedPath) ? Environment.GetEnvironmentVariable("MPV_PATH") ?? "mpv" : savedPath;
-        _savedMpvPath = _mpvPath;
+        _preferences = DesktopPreferences.Read(_preferencesPath);
+        _mpvPath = string.IsNullOrWhiteSpace(_preferences.MpvPath) ? "mpv" : _preferences.MpvPath;
         MpvPathInput.Text = _mpvPath;
-        var player = new MpvQueuePlayer(() => new() { ExecutablePath = Volatile.Read(ref _mpvPath) });
-        _library = new(new BilibiliClient(_http), new SqliteLibraryStore(Path.Combine(directory, "library.db")), player);
+        _host = new();
+        _outputHandle = _host.Handle.ToInt64();
+        _player = new(() => new() { ExecutablePath = Volatile.Read(ref _mpvPath), WindowId = Volatile.Read(ref _outputHandle),
+            FillWindow = _preferences.FillWindow });
+        _library = new(new BilibiliClient(_http), new SqliteLibraryStore(Path.Combine(directory, "library.db")), _player);
         _library.Changed += (_, _) => _ = Dispatcher.InvokeAsync(Render);
+        _tray = new(Dispatcher, ShowControls, TogglePause, () => Next_Click(this, new()), ToggleWallpaper, RequestExit);
+        RefreshSettings();
+        RefreshDesktop();
+        SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
+        SystemEvents.PowerModeChanged += PowerModeChanged;
+        NetworkChange.NetworkAvailabilityChanged += NetworkAvailabilityChanged;
+        NetworkChange.NetworkAddressChanged += NetworkAddressChanged;
         _timer.Tick += async (_, _) =>
         {
-            if (!_busy && !_closing && _ready) await RunAsync(ct => _library.CheckpointAsync(ct));
+            if (!_busy && !_closing && _ready) await MaintainAsync();
         };
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        await RunAsync(async ct => { await _library.InitializeAsync(ct); _ready = true; VolumeSlider.Value = _library.Snapshot.Playback.Volume; }, initializing: true);
+        if (_loaded) return;
+        _loaded = true;
+        if (Environment.GetCommandLineArgs().Contains("--background")) Hide();
+        await RunAsync(async ct =>
+        {
+            await _library.InitializeAsync(ct);
+            if (!_host.Attached && !_preferences.ContinueAudioWhenHidden) await _library.PauseAsync(ct);
+            _ready = true; VolumeSlider.Value = _library.Snapshot.Playback.Volume;
+        }, initializing: true);
         if (_ready) VolumeSlider.Value = _library.Snapshot.Playback.Volume;
         _timer.Start();
+    }
+
+    private void RefreshSettings()
+    {
+        _rendering = true;
+        try
+        {
+            WallpaperBox.IsChecked = _preferences.WallpaperEnabled;
+            ContinueAudioBox.IsChecked = _preferences.ContinueAudioWhenHidden;
+            FitBox.SelectedIndex = _preferences.FillWindow ? 0 : 1;
+            DisplayBox.ItemsSource = new[] { new DisplayTarget("", 0, 0, 0, 0, false) }
+                .Concat(DesktopVideoHost.GetDisplays()).ToArray();
+            DisplayBox.SelectedItem = DisplayBox.Items.Cast<DisplayTarget>().FirstOrDefault(d => d.Id == _preferences.DisplayId)
+                ?? DisplayBox.Items[0];
+            try { StartupBox.IsChecked = LoginStartup.IsEnabled(); }
+            catch (System.Security.SecurityException) { StartupBox.IsChecked = false; }
+        }
+        finally { _rendering = false; }
+    }
+
+    private void RefreshDesktop()
+    {
+        if (_closing) return;
+        var snapshot = _library.Snapshot;
+        if (_host.Refresh(_preferences.WallpaperEnabled && !_suspended, _preferences.DisplayId,
+            snapshot.OutputActive))
+        {
+            Interlocked.Exchange(ref _outputHandle, _host.Handle.ToInt64());
+            _outputRebindNeeded = true;
+        }
+        DesktopStatus.Text = _host.Status;
+    }
+
+    private Task MaintainAsync() => RunAsync(async ct =>
+    {
+        if (_powerSuspendRequested)
+        {
+            _powerSuspendRequested = false; _suspended = true;
+            await _library.SuspendAsync(ct);
+        }
+        if (_powerResumeRequested)
+        {
+            _powerResumeRequested = false; _suspended = false;
+            RefreshSettings(); RefreshDesktop();
+            await _library.ResumeAsync(ct);
+            _outputRebindNeeded = false;
+        }
+        RefreshDesktop();
+        if (_suspended) return;
+        if (!_host.Attached && !_preferences.ContinueAudioWhenHidden && _library.Snapshot.Playback.Intent == PlaybackIntent.Playing)
+            await _library.PauseAsync(ct);
+        if (_outputRebindNeeded)
+        {
+            _outputRebindNeeded = false;
+            await _library.RebindOutputAsync(ct);
+        }
+        await _library.CheckpointAsync(ct);
+        var immediate = _networkChanged;
+        _networkChanged = false;
+        if (_library.Snapshot.RecoveryPending) await _library.RetryRecoveryAsync(immediate, ct);
+    });
+
+    private void OnSystemChange(Action action) => Dispatcher.BeginInvoke(() =>
+    {
+        if (_closing) return;
+        action();
+        if (_ready && !_busy) _ = MaintainAsync();
+    });
+    private void DisplaySettingsChanged(object? sender, EventArgs e) => OnSystemChange(RefreshSettings);
+    private void PowerModeChanged(object sender, PowerModeChangedEventArgs e) => OnSystemChange(() =>
+    {
+        if (e.Mode == PowerModes.Suspend) _powerSuspendRequested = true;
+        if (e.Mode == PowerModes.Resume) _powerResumeRequested = true;
+    });
+    private void NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
+    {
+        if (e.IsAvailable) OnSystemChange(() => _networkChanged = true);
+    }
+    private void NetworkAddressChanged(object? sender, EventArgs e) => OnSystemChange(() => _networkChanged = true);
+
+    private async void ApplyDesktop_Click(object sender, RoutedEventArgs e) => await RunAsync(async ct =>
+    {
+        var updated = _preferences with
+        {
+            WallpaperEnabled = WallpaperBox.IsChecked == true,
+            ContinueAudioWhenHidden = ContinueAudioBox.IsChecked == true,
+            DisplayId = (DisplayBox.SelectedItem as DisplayTarget)?.Id,
+            FillWindow = FitBox.SelectedIndex == 0
+        };
+        updated.Save(_preferencesPath);
+        _preferences = updated;
+        LoginStartup.SetEnabled(StartupBox.IsChecked == true);
+        await _library.SetVideoFitAsync(updated.FillWindow, ct);
+        RefreshDesktop();
+        if (!_host.Attached && !updated.ContinueAudioWhenHidden) await _library.PauseAsync(ct);
+    });
+
+    private void ShowControls() { Show(); WindowState = WindowState.Normal; Activate(); }
+    private void Hide_Click(object sender, RoutedEventArgs e) => Hide();
+    private void Exit_Click(object sender, RoutedEventArgs e) => RequestExit();
+    private void RequestExit() { _exitRequested = true; Close(); }
+    internal void ExitForSession() => RequestExit();
+    private async void TogglePause() => await RunAsync(ct => _library.Snapshot.Playback.Intent == PlaybackIntent.Playing
+        ? _library.PauseAsync(ct) : _library.PlayAsync(token: ct));
+    private void ToggleWallpaper()
+    {
+        if (_busy || !_ready) return;
+        WallpaperBox.IsChecked = !_preferences.WallpaperEnabled;
+        ApplyDesktop_Click(this, new());
     }
     private async void ImportVideo_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(ct => _library.ImportVideoAsync(VideoInput.Text.Trim(), ct), "正在导入视频及分 P…");
@@ -173,6 +301,8 @@ public partial class MainWindow : Window
             Progress.Value = Math.Clamp(position.TotalSeconds, 0, Progress.Maximum);
             ModeBox.SelectedIndex = snapshot.Playback.Mode == QueueMode.Sequential ? 0 : 1;
             StatusText.Text = snapshot.Notice;
+            _tray.SetStatus(snapshot.Current?.Title ?? intent);
+            RefreshDesktop();
         }
         finally { _rendering = false; }
     }
@@ -182,17 +312,14 @@ public partial class MainWindow : Window
         if (_busy || _closing || (!_ready && !initializing)) return;
         _busy = true;
         Volatile.Write(ref _mpvPath, string.IsNullOrWhiteSpace(MpvPathInput.Text) ? "mpv" : MpvPathInput.Text.Trim());
-        ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = false;
+        ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = DesktopPanel.IsEnabled = false;
         if (notice is not null) StatusText.Text = notice;
         try
         {
-            if (_savedMpvPath != _mpvPath)
+            if (_preferences.MpvPath != _mpvPath)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(_preferencesPath)!);
-                var temporary = _preferencesPath + ".tmp";
-                File.WriteAllText(temporary, JsonSerializer.Serialize(new DesktopPreferences(_mpvPath)));
-                File.Move(temporary, _preferencesPath, overwrite: true);
-                _savedMpvPath = _mpvPath;
+                _preferences = _preferences with { MpvPath = _mpvPath };
+                _preferences.Save(_preferencesPath);
             }
             _pending = operation(_lifetime.Token); await _pending; Render();
         }
@@ -204,6 +331,7 @@ public partial class MainWindow : Window
                 ContentAccessException content => $"来源访问失败（{Failure(content.Kind.ToString())}），请检查输入或稍后重试。",
                 MpvException player => $"播放器错误（{player.Code}），请检查 mpv 路径后重试。",
                 SqliteException or IOException or UnauthorizedAccessException => "本地资料读写失败，请检查磁盘空间及应用数据目录权限。",
+                System.Security.SecurityException => "登录启动设置无法写入，请检查当前用户的注册表权限。",
                 ArgumentException or FormatException => "输入无效，请检查链接、ID 或跳转秒数。",
                 OperationCanceledException or HttpRequestException => "网络请求失败或超时，请稍后重试。",
                 _ => "操作未完成，请检查来源与播放器配置后重试。"
@@ -213,7 +341,7 @@ public partial class MainWindow : Window
         {
             _busy = false;
             _ready = _library.IsInitialized;
-            ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = _ready && !_closing;
+            ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = DesktopPanel.IsEnabled = _ready && !_closing;
         }
     }
 
@@ -233,9 +361,14 @@ public partial class MainWindow : Window
     {
         if (_closed) return;
         e.Cancel = true;
+        if (!_exitRequested) { Hide(); return; }
         if (_closing) return;
         _closing = true;
         _timer.Stop(); _lifetime.Cancel();
+        SystemEvents.DisplaySettingsChanged -= DisplaySettingsChanged;
+        SystemEvents.PowerModeChanged -= PowerModeChanged;
+        NetworkChange.NetworkAvailabilityChanged -= NetworkAvailabilityChanged;
+        NetworkChange.NetworkAddressChanged -= NetworkAddressChanged;
         IsEnabled = false;
         try
         {
@@ -246,11 +379,14 @@ public partial class MainWindow : Window
         {
             MessageBox.Show("最后一次进度未能保存，将使用上次保存的进度恢复。", "WallBili", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-        finally { _http.Dispose(); _lifetime.Dispose(); _closed = true; Close(); }
+        finally
+        {
+            _tray.Dispose(); _host.Dispose(); _http.Dispose(); _lifetime.Dispose(); _closed = true; Close();
+            Application.Current.Shutdown();
+        }
     }
 
     private sealed record SourceRow(string Id, string Title);
     private sealed record EntryRow(CatalogEntry Entry, string Status);
     private sealed record QueueRow(Guid Id, string Marker, string Title, string Status);
-    private sealed record DesktopPreferences(string MpvPath);
 }
