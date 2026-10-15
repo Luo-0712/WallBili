@@ -11,3 +11,6 @@ work/
 *.cookie
 *.cookies
 .env
+*.db
+*.db-shm
+*.db-wal

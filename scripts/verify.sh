@@ -10,3 +10,4 @@ dotnet restore WallBili.slnx --locked-mode --disable-parallel
 dotnet build WallBili.slnx -c Release --no-restore -m:1
 dotnet run --project tests/WallBili.Infrastructure.Tests -c Release --no-build -- -result-xml work/content-tests.xml -nologo
 dotnet run --project tests/WallBili.Player.Mpv.Tests -c Release --no-build -- -result-xml work/player-tests.xml -nologo
+dotnet run --project tests/WallBili.Library.Tests -c Release --no-build -- -result-xml work/library-tests.xml -nologo

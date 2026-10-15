@@ -4,6 +4,7 @@ using System.Net;
 using System.Text.Json;
 using WallBili.Core;
 using WallBili.Infrastructure.Bilibili;
+using WallBili.Infrastructure.Storage;
 using WallBili.Player.Mpv;
 
 return await Probe.RunAsync(args);
@@ -17,13 +18,15 @@ internal static class Probe
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
         {
             Console.WriteLine("""
-                WallBili phase-one probe (.NET 10)
+                WallBili content and queue probe (.NET 10)
                 video INPUT                         Metadata and all BVID/CID parts
                 media INPUT [--page N] [--format mp4|dash]  Resolve twice; safe format summary
                 collection season|series UP_ID ID [--page N] [--size N]
                 check-playback INPUT [--page N] [--format mp4|dash] [--mpv PATH] [--headless]
+                check-queue INPUT1 INPUT2 [--mpv PATH] [--headless]
                 INPUT: a BVID or https://www.bilibili.com/video/BVID/?p=N
                 check-playback verifies decoded A/V, clock, pause, resume and seek.
+                check-queue imports two video sources and seeks near each end to verify actual EOF advancement.
                 --headless uses null outputs; visible/audible output still needs Windows.
                 No session cookies, signed stream URLs or raw HTTP errors are printed.
                 """);
@@ -125,6 +128,50 @@ internal static class Probe
                         resolved_again_from_identity = renewed.Content == session.Content,
                         natural_expiry_verified = false
                     });
+                    return 0;
+                }
+                case "check-queue":
+                {
+                    var directory = Path.Combine(Path.GetTempPath(), "wallbili-queue-probe-" + Guid.NewGuid().ToString("N"));
+                    Directory.CreateDirectory(directory);
+                    try
+                    {
+                        var store = new SqliteLibraryStore(Path.Combine(directory, "library.db"));
+                        await using (var library = new LibrarySession(bili, store, new MpvQueuePlayer(() => new()
+                        {
+                            ExecutablePath = Option(args, "--mpv") ?? Environment.GetEnvironmentVariable("MPV_PATH") ?? "mpv",
+                            Headless = args.Contains("--headless")
+                        })))
+                        {
+                            await library.InitializeAsync(timeout.Token);
+                            await library.ImportVideoAsync(Required(args, 1), timeout.Token);
+                            await library.ImportVideoAsync(Required(args, 2), timeout.Token);
+                            if (library.Snapshot.Sources.Count != 2) throw new ArgumentException("Use two distinct video sources.");
+                            // One part from each selected source keeps this verification short and repeatable.
+                            var keys = library.Snapshot.Sources.Select(s => s.Members.First()).ToArray();
+                            await library.EnqueueAsync(keys, timeout.Token);
+                            await library.PlayAsync(token: timeout.Token);
+                            var tested = new HashSet<Guid>();
+                            while (library.Snapshot.Playback.Intent != PlaybackIntent.Stopped)
+                            {
+                                var snapshot = library.Snapshot;
+                                if (snapshot.Playback.CurrentId is { } id && tested.Add(id) && snapshot.Current is { } entry)
+                                {
+                                    if (entry.Duration.TotalSeconds < 3) throw new InvalidOperationException("Queue sample is too short.");
+                                    await library.SeekAsync(entry.Duration - TimeSpan.FromSeconds(2), timeout.Token);
+                                }
+                                await Task.Delay(100, timeout.Token);
+                            }
+                            if (library.Snapshot.Queue.Any(q => q.CompletedCount != 1))
+                                throw new InvalidOperationException("Not all queue entries completed successfully.");
+                        }
+                        var restored = await store.LoadAsync(timeout.Token);
+                        Write(new { capability = "persistent_queue", status = "passed", sources = restored.Sources.Count,
+                            entries = restored.Entries.Count, queue = restored.Queue.Select(q => new { q.Key, q.CompletedCount }),
+                            eof_driven_advancement = true, seek_near_end = true, headless = args.Contains("--headless"),
+                            windows_output_verified = false, temporary_database = true });
+                    }
+                    finally { Directory.Delete(directory, recursive: true); }
                     return 0;
                 }
                 default:
@@ -238,9 +285,10 @@ internal static class Probe
             "media" => new[] { "--page", "--format" },
             "collection" => new[] { "--page", "--size" },
             "check-playback" => new[] { "--page", "--format", "--mpv", "--headless" },
+            "check-queue" => new[] { "--mpv", "--headless" },
             _ => throw new ArgumentException("Unknown command.")
         };
-        int positionalCount = args[0] == "collection" ? 4 : 2;
+        int positionalCount = args[0] switch { "collection" => 4, "check-queue" => 3, _ => 2 };
         if (args.Length < positionalCount) throw new ArgumentException("Missing arguments.");
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (int i = positionalCount; i < args.Length; i++)
