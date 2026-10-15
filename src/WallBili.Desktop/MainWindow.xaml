@@ -1,0 +1,67 @@
+<Window x:Class="WallBili.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WallBili · 第一阶段调试播放器" Width="880" Height="720"
+        MinWidth="700" MinHeight="640" Background="#F5F6F8"
+        Closing="Window_Closing">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="28">
+            <TextBlock Text="WallBili" FontSize="30" FontWeight="SemiBold" Foreground="#17212D" />
+            <TextBlock Text="第一阶段 · Bilibili MP4 / DASH 播放链路" FontSize="14" Foreground="#536170" Margin="0,5,0,24" />
+
+            <TextBlock Text="视频链接 / BV 号" FontWeight="SemiBold" Margin="0,0,0,8" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="VideoInput" ToolTip="输入 bilibili.com/video/BV… 链接或 BV 号" KeyDown="VideoInput_KeyDown" />
+                <Button x:Name="FetchButton" Grid.Column="1" Content="获取视频" Click="Fetch_Click" Margin="12,0,0,0" IsDefault="True" />
+            </Grid>
+
+            <Border Background="White" CornerRadius="8" Padding="18" Margin="0,18,0,18" BorderBrush="#E0E4EA" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock x:Name="VideoTitle" Text="输入视频后获取信息" FontSize="19" FontWeight="SemiBold" />
+                    <TextBlock x:Name="VideoMetadata" Text="支持公开且当前可访问的视频。播放将在独立 mpv 窗口中打开。" Foreground="#536170" Margin="0,8,0,16" />
+                    <TextBlock Text="选择分 P" Margin="0,0,0,6" />
+                    <ComboBox x:Name="PartsBox" MinHeight="34" Padding="7" IsEnabled="False" SelectionChanged="PartsBox_SelectionChanged">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock>
+                                    <Run Text="P" /><Run Text="{Binding Page, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Title, Mode=OneWay}" />
+                                </TextBlock>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock x:Name="SelectedPartText" Foreground="#536170" Margin="0,7,0,0" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="mpv 可执行文件" FontWeight="SemiBold" Margin="0,0,0,8" />
+            <TextBox x:Name="MpvPathInput" ToolTip="填写 mpv.exe 完整路径，或将 mpv 加入 PATH；默认读取 MPV_PATH。" />
+            <TextBlock Text="Windows 上可填写 mpv.exe 的完整路径；也可使用 PATH 或 MPV_PATH。" Foreground="#536170" Margin="0,5,0,16" />
+
+            <WrapPanel Margin="0,0,0,15">
+                <Button x:Name="PlayButton" Content="播放所选分 P" Click="Play_Click" IsEnabled="False" />
+                <Button x:Name="PauseButton" Content="暂停" Click="Pause_Click" IsEnabled="False" />
+                <Button x:Name="ResumeButton" Content="继续" Click="Resume_Click" IsEnabled="False" />
+                <Button x:Name="RefreshButton" Content="重新解析并恢复进度" Click="Refresh_Click" IsEnabled="False" />
+            </WrapPanel>
+            <ProgressBar x:Name="PlaybackProgress" Height="6" Minimum="0" Maximum="1" Value="0" />
+            <TextBlock x:Name="PositionText" Text="00:00 / 00:00" Foreground="#536170" Margin="0,7,0,12" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                <TextBlock Text="跳转到（秒）" VerticalAlignment="Center" Margin="0,0,10,0" />
+                <TextBox x:Name="SeekInput" Text="0" Width="100" IsEnabled="False" />
+                <Button x:Name="SeekButton" Content="跳转" Click="Seek_Click" Margin="10,0,0,0" IsEnabled="False" />
+            </StackPanel>
+
+            <Border Background="#EAF0F8" CornerRadius="6" Padding="14">
+                <StackPanel>
+                    <TextBlock Text="状态" FontWeight="SemiBold" Margin="0,0,0,5" />
+                    <TextBlock x:Name="StatusText" Text="就绪" AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock x:Name="SessionText" Foreground="#536170" Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Window>
