@@ -6,10 +6,12 @@
     <Project Path="src/WallBili.Player.Mpv/WallBili.Player.Mpv.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/WallBili.Library.Tests/WallBili.Library.Tests.csproj" />
     <Project Path="tests/WallBili.Infrastructure.Tests/WallBili.Infrastructure.Tests.csproj" />
     <Project Path="tests/WallBili.Player.Mpv.Tests/WallBili.Player.Mpv.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/WallBili.DesktopProbe/WallBili.DesktopProbe.csproj" />
     <Project Path="tools/WallBili.Probe/WallBili.Probe.csproj" />
   </Folder>
 </Solution>
