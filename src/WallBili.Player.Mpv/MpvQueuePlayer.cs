@@ -11,12 +11,14 @@ public sealed class MpvQueuePlayer(Func<MpvPlayerOptions>? options = null) : IQu
     private MpvPlayerOptions? _currentOptions;
     private Guid? _loading;
     private Guid? _active;
+    private bool? _fillWindow;
     public event EventHandler<QueuePlaybackEnded>? Ended;
 
     public async Task LoadAsync(MediaSession session, Guid playbackId, TimeSpan position, bool paused, double volume,
         CancellationToken cancellationToken = default)
     {
         var desired = (options?.Invoke() ?? new()) with { StartPaused = true };
+        if (_fillWindow is { } fill) desired = desired with { FillWindow = fill };
         if (_player is not null && desired != _currentOptions) await DisposeAsync();
         if (_player is null)
         {
@@ -26,11 +28,11 @@ public sealed class MpvQueuePlayer(Func<MpvPlayerOptions>? options = null) : IQu
             _player.PlaybackEnded += OnEnd;
             _player.ConnectionClosed += OnDisconnect;
         }
-        await _player.StartAsync(cancellationToken);
-        await _player.PauseAsync(cancellationToken);
-        lock (_sync) { _loading = playbackId; _active = playbackId; }
         try
         {
+            await _player.StartAsync(cancellationToken);
+            await _player.PauseAsync(cancellationToken);
+            lock (_sync) { _loading = playbackId; _active = playbackId; }
             await _player.LoadAsync(session, cancellationToken);
             await _player.SetVolumeAsync(volume, cancellationToken);
             if (position > TimeSpan.Zero) await _player.SeekAsync(position, cancellationToken);
@@ -39,6 +41,10 @@ public sealed class MpvQueuePlayer(Func<MpvPlayerOptions>? options = null) : IQu
         catch (MpvException ex) when (ex.Code == MpvErrorCode.MediaFailed)
         {
             throw new ContentAccessException(ContentFailureKind.Unsupported, "The player could not decode this media.");
+        }
+        catch (MpvException ex) when (ex.Code is MpvErrorCode.Disconnected or MpvErrorCode.Timeout)
+        {
+            throw new PlaybackInterruptedException();
         }
         finally { lock (_sync) _loading = null; }
     }
@@ -70,8 +76,25 @@ public sealed class MpvQueuePlayer(Func<MpvPlayerOptions>? options = null) : IQu
 
     public Task SetPausedAsync(bool paused, CancellationToken cancellationToken = default) =>
         paused ? _player!.PauseAsync(cancellationToken) : _player!.ResumeAsync(cancellationToken);
+    public async Task ResetOutputAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await DisposeAsync();
+    }
     public Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default) => _player!.SeekAsync(position, cancellationToken);
     public Task SetVolumeAsync(double volume, CancellationToken cancellationToken = default) => _player!.SetVolumeAsync(volume, cancellationToken);
+    public async Task SetVideoFitAsync(bool fill, CancellationToken cancellationToken = default)
+    {
+        _fillWindow = fill;
+        if (_player is not null) await _player.SetVideoFitAsync(fill, cancellationToken);
+        if (_currentOptions is not null) _currentOptions = _currentOptions with { FillWindow = fill };
+    }
+    public async Task<int?> GetProcessIdAsync(CancellationToken cancellationToken = default)
+    {
+        if (_player is null) return null;
+        try { return await _player.GetPropertyAsync<int?>("pid", cancellationToken); }
+        catch (MpvException) { return null; }
+    }
     public async Task<TimeSpan?> GetPositionAsync(CancellationToken cancellationToken = default)
     {
         if (_player is null) return null;

@@ -8,6 +8,11 @@ public sealed class LibrarySession : IAsyncDisposable
     private readonly IQueuePlayer _player;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly TimeProvider _time;
+    private bool _recoveryPending, _suspended;
+    private int _retryAttempt, _streamFailures;
+    private DateTimeOffset _retryAt, _lastAdvance;
+    private double _lastPosition;
     private LibraryState _state = new();
     private Guid? _activePlayback;
     private bool _disposed;
@@ -15,9 +20,10 @@ public sealed class LibrarySession : IAsyncDisposable
     private string _notice = "就绪";
     private LibrarySnapshot _snapshot = new([], [], [], new(), "就绪");
 
-    public LibrarySession(IContentClient content, ILibraryStore store, IQueuePlayer player)
+    public LibrarySession(IContentClient content, ILibraryStore store, IQueuePlayer player, TimeProvider? time = null)
     {
         _content = content; _store = store; _player = player;
+        _time = time ?? TimeProvider.System;
         _player.Ended += Player_Ended;
     }
 
@@ -134,6 +140,7 @@ public sealed class LibrarySession : IAsyncDisposable
 
     private async Task AfterCurrentRemovedAsync(int index, PlaybackIntent intent, CancellationToken ct)
     {
+        _recoveryPending = false; _retryAttempt = 0; _streamFailures = 0;
         await StopPlayerAsync(ct);
         _state.Playback = _state.Playback with { CurrentId = null, PositionSeconds = 0, Intent = PlaybackIntent.Stopped };
         // Deleting the last playing item stops even in repeat mode: never wrap unexpectedly on deletion.
@@ -146,20 +153,22 @@ public sealed class LibrarySession : IAsyncDisposable
 
     public Task PlayAsync(Guid? id = null, CancellationToken token = default) => ExecuteAsync(async ct =>
     {
+        _recoveryPending = false; _retryAttempt = 0; _streamFailures = 0;
         var index = id is { } selected ? _state.Queue.FindIndex(q => q.Id == selected) : CurrentIndex();
         if (index < 0) index = 0;
         if (id is null && _activePlayback is not null)
         {
             await _player.SetPausedAsync(false, ct);
             _state.Playback = _state.Playback with { Intent = PlaybackIntent.Playing };
+            _lastAdvance = _time.GetUtcNow();
         }
         else await StartAsync(index, id is null ? _state.Playback.PositionSeconds : 0, false, ct);
     }, token);
 
     public Task PauseAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
     {
-        if (_activePlayback is null) return;
-        await _player.SetPausedAsync(true, ct);
+        if (_state.Playback.Intent == PlaybackIntent.Stopped) return;
+        if (_activePlayback is not null) await _player.SetPausedAsync(true, ct);
         await CapturePositionAsync(ct);
         _state.Playback = _state.Playback with { Intent = PlaybackIntent.Paused };
         _notice = "已暂停";
@@ -167,6 +176,7 @@ public sealed class LibrarySession : IAsyncDisposable
 
     public Task StopAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
     {
+        _recoveryPending = false; _retryAttempt = 0; _streamFailures = 0;
         await StopPlayerAsync(ct);
         _state.Playback = _state.Playback with { Intent = PlaybackIntent.Stopped, PositionSeconds = 0 };
         _notice = "已停止；下次启动不会自动播放";
@@ -176,6 +186,7 @@ public sealed class LibrarySession : IAsyncDisposable
     public Task PreviousAsync(CancellationToken token = default) => NavigateAsync(-1, token);
     private Task NavigateAsync(int direction, CancellationToken token) => ExecuteAsync(async ct =>
     {
+        _recoveryPending = false; _retryAttempt = 0; _streamFailures = 0;
         var index = CurrentIndex();
         var target = index < 0 ? 0 : index + direction;
         if (_state.Playback.Mode == QueueMode.RepeatAll && _state.Queue.Count > 0)
@@ -197,23 +208,84 @@ public sealed class LibrarySession : IAsyncDisposable
         _state.Playback = _state.Playback with { Volume = volume };
     }, token);
 
+    public Task SetVideoFitAsync(bool fill, CancellationToken token = default) =>
+        ExecuteAsync(ct => _player.SetVideoFitAsync(fill, ct), token);
+
     public Task SeekAsync(TimeSpan position, CancellationToken token = default) => ExecuteAsync(async ct =>
     {
         if (position < TimeSpan.Zero || (_snapshot.Current is { Duration: var duration } && duration > TimeSpan.Zero && position > duration))
             throw new ArgumentOutOfRangeException(nameof(position));
-        if (_activePlayback is null) return;
-        await _player.SeekAsync(position, ct);
+        if (_activePlayback is not null) await _player.SeekAsync(position, ct);
+        else if (_state.Playback.Intent == PlaybackIntent.Stopped) return;
         _state.Playback = _state.Playback with { PositionSeconds = position.TotalSeconds };
+        _lastPosition = position.TotalSeconds; _lastAdvance = _time.GetUtcNow();
     }, token);
 
     public Task ReloadAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
     {
         if (CurrentIndex() < 0) return;
+        _recoveryPending = false; _retryAttempt = 0; _streamFailures = 0;
         await CapturePositionAsync(ct);
         await StartAsync(CurrentIndex(), _state.Playback.PositionSeconds, _state.Playback.Intent != PlaybackIntent.Playing, ct);
     }, token);
 
-    public Task CheckpointAsync(CancellationToken token = default) => ExecuteAsync(CapturePositionAsync, token);
+    public Task CheckpointAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
+    {
+        await CapturePositionAsync(ct);
+        if (_activePlayback is not null && _state.Playback.Intent == PlaybackIntent.Playing)
+        {
+            if (Math.Abs(_lastPosition - _state.Playback.PositionSeconds) > .1)
+            {
+                _lastPosition = _state.Playback.PositionSeconds; _lastAdvance = _time.GetUtcNow();
+            }
+            else if (_time.GetUtcNow() - _lastAdvance >= TimeSpan.FromSeconds(45))
+                await ScheduleRecoveryAsync("播放缓冲超时", ct);
+        }
+    }, token);
+
+    /// <summary>Retries only the current stable identity, with capped backoff. A user stop cancels recovery.</summary>
+    public Task RetryRecoveryAsync(bool immediate = false, CancellationToken token = default) => ExecuteAsync(async ct =>
+    {
+        if (!_recoveryPending || _suspended || CurrentIndex() < 0 || _state.Playback.Intent == PlaybackIntent.Stopped ||
+            (!immediate && _time.GetUtcNow() < _retryAt)) return;
+        _recoveryPending = false;
+        await StartAsync(CurrentIndex(), _state.Playback.PositionSeconds, _state.Playback.Intent == PlaybackIntent.Paused, ct);
+    }, token);
+
+    /// <summary>System sleep preserves playback intent without leaving an audible process running.</summary>
+    public Task SuspendAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
+    {
+        _suspended = true;
+        await CapturePositionAsync(ct);
+        await StopPlayerAsync(ct);
+        await _player.ResetOutputAsync(ct);
+        _notice = "系统休眠，队列与恢复进度已保存";
+    }, token);
+
+    public Task ResumeAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
+    {
+        _suspended = false;
+        if (CurrentIndex() >= 0 && _state.Playback.Intent != PlaybackIntent.Stopped)
+            await StartAsync(CurrentIndex(), _state.Playback.PositionSeconds, _state.Playback.Intent == PlaybackIntent.Paused, ct);
+    }, token);
+
+    /// <summary>Recreates an output if its owned HWND was destroyed, retaining the same queue item and intent.</summary>
+    public Task RebindOutputAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
+    {
+        if (_suspended || CurrentIndex() < 0 || _state.Playback.Intent == PlaybackIntent.Stopped) return;
+        await CapturePositionAsync(ct);
+        await StopPlayerAsync(ct);
+        await _player.ResetOutputAsync(ct);
+        await StartAsync(CurrentIndex(), _state.Playback.PositionSeconds, _state.Playback.Intent == PlaybackIntent.Paused, ct);
+    }, token);
+
+    private async Task ScheduleRecoveryAsync(string reason, CancellationToken ct)
+    {
+        await StopPlayerAsync(ct);
+        _recoveryPending = true;
+        _retryAt = _time.GetUtcNow() + TimeSpan.FromSeconds(Math.Min(60, 2 * Math.Pow(2, Math.Min(_retryAttempt++, 5))));
+        _notice = $"{reason}；保留当前项与进度，等待重新连接（第 {_retryAttempt} 次）";
+    }
 
     private async Task CapturePositionAsync(CancellationToken ct)
     {
@@ -223,21 +295,24 @@ public sealed class LibrarySession : IAsyncDisposable
 
     private async Task StartAsync(int index, double seconds, bool paused, CancellationToken ct)
     {
+        _recoveryPending = false;
         await StopPlayerAsync(ct);
         var attempted = new HashSet<Guid>();
         var first = true;
         while (index >= 0 && index < _state.Queue.Count && attempted.Add(_state.Queue[index].Id))
         {
             var item = _state.Queue[index];
+            if (_state.Playback.CurrentId != item.Id) _streamFailures = 0;
             var entry = _state.Entries.First(e => e.Key == item.Key);
             if (first || entry.Availability != EntryAvailability.Failed)
             {
                 _state.Playback = _state.Playback with { CurrentId = item.Id, PositionSeconds = seconds,
                     Intent = paused ? PlaybackIntent.Paused : PlaybackIntent.Playing };
                 var playbackId = Guid.NewGuid();
-                _activePlayback = playbackId;
                 try
                 {
+                    if (_suspended) return;
+                    _activePlayback = playbackId;
                     var media = await _content.ResolveMediaAsync(item.Key, ct);
                     // Checkpoint intent before starting: an interrupted load is safe to retry after restart.
                     await _store.SaveAsync(_state, ct);
@@ -246,13 +321,30 @@ public sealed class LibrarySession : IAsyncDisposable
                     await _player.LoadAsync(media, playbackId, position, paused, _state.Playback.Volume, ct);
                     _state.Playback = _state.Playback with { PositionSeconds = position.TotalSeconds };
                     SetAvailability(item.Key, EntryAvailability.Available, null);
+                    _retryAttempt = 0; _lastPosition = position.TotalSeconds; _lastAdvance = _time.GetUtcNow();
                     _notice = $"{(paused ? "已恢复并暂停" : "正在播放")}：{entry.Title}";
                     return;
                 }
                 catch (ContentAccessException ex)
                 {
+                    if (ex.Kind is ContentFailureKind.Network or ContentFailureKind.RateLimited)
+                    {
+                        await ScheduleRecoveryAsync("网络暂不可用", ct);
+                        return;
+                    }
                     SetAvailability(item.Key, EntryAvailability.Failed, ex.Kind.ToString());
                     await StopPlayerAsync(ct);
+                }
+                catch (PlaybackInterruptedException)
+                {
+                    await ScheduleRecoveryAsync("播放器连接暂不可用", ct);
+                    return;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    // Exit/suspend during a load must retain the intent checkpointed before that load.
+                    try { await StopPlayerAsync(CancellationToken.None); } catch { }
+                    throw;
                 }
                 catch
                 {
@@ -281,7 +373,16 @@ public sealed class LibrarySession : IAsyncDisposable
                 if (index < 0) return;
                 var item = _state.Queue[index];
                 _activePlayback = null;
-                if (args.Reason == "eof") _state.Queue[index] = item with { CompletedCount = item.CompletedCount + 1 };
+                if (args.Reason == "eof")
+                {
+                    _streamFailures = 0;
+                    _state.Queue[index] = item with { CompletedCount = item.CompletedCount + 1 };
+                }
+                else if (args.Reason == "disconnect" || (args.Reason == "error" && _streamFailures++ < 2))
+                {
+                    await ScheduleRecoveryAsync("播放连接中断", ct);
+                    return;
+                }
                 else if (args.Reason == "error") SetAvailability(item.Key, EntryAvailability.Failed, "MediaFailed");
                 else
                 {
@@ -346,7 +447,8 @@ public sealed class LibrarySession : IAsyncDisposable
         finally
         {
             Volatile.Write(ref _snapshot, new(_state.Entries.ToArray(), _state.Sources.ToArray(),
-                _state.Queue.ToArray(), _state.Playback, _notice));
+                _state.Queue.ToArray(), _state.Playback, _notice, _recoveryPending, _recoveryPending ? _retryAt : null,
+                _activePlayback is not null && !_recoveryPending));
             _gate.Release();
             Changed?.Invoke(this, EventArgs.Empty);
         }
