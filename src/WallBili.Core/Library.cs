@@ -4,6 +4,9 @@ public enum EntryAvailability { Unknown, Available, Failed }
 public enum PlaybackIntent { Stopped, Playing, Paused }
 public enum QueueMode { Sequential, RepeatAll }
 
+/// <summary>A transient player transport failure; retry identity without marking the catalog item invalid.</summary>
+public sealed class PlaybackInterruptedException() : Exception("The playback connection is temporarily unavailable.");
+
 public sealed record CatalogEntry(ContentKey Key, string Title, string Uploader, int Page,
     TimeSpan Duration, EntryAvailability Availability = EntryAvailability.Unknown, string? Failure = null);
 public sealed record ImportProblem(string Bvid, string Failure);
@@ -23,7 +26,8 @@ public sealed class LibraryState
 }
 
 public sealed record LibrarySnapshot(IReadOnlyList<CatalogEntry> Entries, IReadOnlyList<CatalogSource> Sources,
-    IReadOnlyList<QueueItem> Queue, PlaybackState Playback, string Notice)
+    IReadOnlyList<QueueItem> Queue, PlaybackState Playback, string Notice, bool RecoveryPending = false,
+    DateTimeOffset? NextRecoveryAt = null, bool OutputActive = false)
 {
     public CatalogEntry? Current => Queue.FirstOrDefault(q => q.Id == Playback.CurrentId) is { } item
         ? Entries.FirstOrDefault(e => e.Key == item.Key) : null;
@@ -51,4 +55,6 @@ public interface IQueuePlayer : IAsyncDisposable
     Task SetVolumeAsync(double volume, CancellationToken cancellationToken = default);
     Task<TimeSpan?> GetPositionAsync(CancellationToken cancellationToken = default);
     Task StopAsync(CancellationToken cancellationToken = default);
+    Task ResetOutputAsync(CancellationToken cancellationToken = default) => StopAsync(cancellationToken);
+    Task SetVideoFitAsync(bool fill, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
