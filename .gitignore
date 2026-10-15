@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+.vs/
+.vscode/
+TestResults/
+work/
+*.user
+*.suo
+*.mp4
+*.m4s
+*.cookie
+*.cookies
+.env
