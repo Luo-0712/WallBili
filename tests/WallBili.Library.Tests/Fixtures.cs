@@ -11,10 +11,10 @@ internal sealed class LibraryFixture : IAsyncDisposable
     public TestPlayer Player { get; } = new();
     public SqliteLibraryStore Store { get; }
     public LibrarySession Session { get; }
-    public LibraryFixture()
+    public LibraryFixture(TimeProvider? time = null)
     {
         Store = new(DatabasePath);
-        Session = new(Content, Store, Player);
+        Session = new(Content, Store, Player, time);
     }
     public async Task SeedAsync()
     {
@@ -40,6 +40,7 @@ internal sealed class TestContent : IContentClient
     public Dictionary<long, List<string>> Collections { get; } = new() { [10] = [A, B], [20] = [C] };
     public Dictionary<string, ContentFailureKind> MetadataFailures { get; } = [];
     public HashSet<ContentKey> MediaFailures { get; } = [];
+    public Dictionary<ContentKey, ContentFailureKind> ResolveFailures { get; } = [];
     public List<ContentKey> Resolved { get; } = [];
     public Uri MediaUri { get; set; } = new("https://example.invalid/media?temporary-secret");
     public Dictionary<ContentKey, Uri> MediaUris { get; } = [];
@@ -52,6 +53,7 @@ internal sealed class TestContent : IContentClient
     public Task<MediaSession> ResolveMediaAsync(ContentKey key, CancellationToken cancellationToken = default)
     {
         Resolved.Add(key);
+        if (ResolveFailures.TryGetValue(key, out var failure)) throw new ContentAccessException(failure, "Test resolve failure");
         if (MediaFailures.Contains(key)) throw new ContentAccessException(ContentFailureKind.Removed, "Test missing content");
         return Task.FromResult(new MediaSession(key, new(MediaUris.GetValueOrDefault(key, MediaUri), "h264", 16), null,
             new Dictionary<string, string>(), DateTimeOffset.UtcNow, null));

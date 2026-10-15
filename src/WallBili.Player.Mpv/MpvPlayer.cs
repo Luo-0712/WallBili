@@ -4,6 +4,7 @@ using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Win32.SafeHandles;
 using WallBili.Core;
 
 namespace WallBili.Player.Mpv;
@@ -18,14 +19,18 @@ public sealed class MpvPlayer : IAsyncDisposable
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly SemaphoreSlim _writes = new(1, 1);
     private readonly SemaphoreSlim _loads = new(1, 1);
+    private readonly SemaphoreSlim _seeks = new(1, 1);
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> _pending = new();
     private readonly object _loadSync = new();
     private Process? _process;
+    private SafeFileHandle? _processJob;
     private Stream? _connection;
     private StreamWriter? _writer;
     private CancellationTokenSource? _readerCancellation;
     private Task? _readerTask;
     private TaskCompletionSource<bool>? _loadCompletion;
+    private TaskCompletionSource<bool>? _seekCompletion;
+    private bool _seekingStarted;
     private bool _loadingStarted;
     private string? _endpoint;
     private string? _socketDirectory;
@@ -89,7 +94,14 @@ public sealed class MpvPlayer : IAsyncDisposable
             // by our native adapter. The cloud validation build has no Lua or ytdl hook at all.
             if (OperatingSystem.IsWindows()) startInfo.ArgumentList.Add("--ytdl=no");
             if (_options.WindowId is { } windowId)
+            {
                 startInfo.ArgumentList.Add("--wid=" + windowId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                startInfo.ArgumentList.Add("--input-default-bindings=no");
+                startInfo.ArgumentList.Add("--input-cursor=no");
+                startInfo.ArgumentList.Add("--input-vo-keyboard=no");
+                startInfo.ArgumentList.Add("--osc=no");
+            }
+            startInfo.ArgumentList.Add("--panscan=" + (_options.FillWindow ? "1" : "0"));
             if (_options.Headless)
             {
                 startInfo.ArgumentList.Add("--vo=null");
@@ -102,6 +114,7 @@ public sealed class MpvPlayer : IAsyncDisposable
             try
             {
                 _process = Process.Start(startInfo) ?? throw new MpvException(MpvErrorCode.StartupFailed, "Could not start mpv.");
+                if (OperatingSystem.IsWindows()) _processJob = WindowsProcessJob.Attach(_process);
                 // Discard diagnostics: mpv may include temporary signed CDN URLs in them.
                 _process.OutputDataReceived += static (_, _) => { };
                 _process.ErrorDataReceived += static (_, _) => { };
@@ -174,6 +187,9 @@ public sealed class MpvPlayer : IAsyncDisposable
     public Task PauseAsync(CancellationToken cancellationToken = default) => SetPauseAsync(true, cancellationToken);
     public Task ResumeAsync(CancellationToken cancellationToken = default) => SetPauseAsync(false, cancellationToken);
 
+    public async Task SetVideoFitAsync(bool fill, CancellationToken cancellationToken = default) =>
+        await CommandAsync(["set_property", "panscan", fill ? 1 : 0], cancellationToken).ConfigureAwait(false);
+
     public async Task StopPlaybackAsync(CancellationToken cancellationToken = default) =>
         await CommandAsync(["stop"], cancellationToken).ConfigureAwait(false);
 
@@ -188,7 +204,22 @@ public sealed class MpvPlayer : IAsyncDisposable
     {
         if (position < TimeSpan.Zero || !double.IsFinite(position.TotalSeconds))
             throw new MpvException(MpvErrorCode.InvalidArgument, "Seek position must be a non-negative time.");
-        await CommandAsync(["seek", position.TotalSeconds, "absolute+exact"], cancellationToken).ConfigureAwait(false);
+        await _seeks.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            lock (_loadSync) { _seekCompletion = completion; _seekingStarted = false; }
+            await CommandAsync(["seek", position.TotalSeconds, "absolute+exact"], cancellationToken).ConfigureAwait(false);
+            // A command ACK means the seek was accepted, not that time-pos has moved. Saving immediately
+            // after the ACK can overwrite a correct resume point with zero during a paused reload.
+            try { await completion.Task.WaitAsync(_options.CommandTimeout, cancellationToken).ConfigureAwait(false); }
+            catch (TimeoutException) { throw new MpvException(MpvErrorCode.Timeout, "Timed out completing the seek."); }
+        }
+        finally
+        {
+            lock (_loadSync) if (ReferenceEquals(_seekCompletion, completion)) _seekCompletion = null;
+            _seeks.Release();
+        }
     }
 
     public async Task<T?> GetPropertyAsync<T>(string property, CancellationToken cancellationToken = default)
@@ -331,7 +362,10 @@ public sealed class MpvPlayer : IAsyncDisposable
             foreach (var request in _pending.Values)
                 request.TrySetException(disconnected);
             lock (_loadSync)
+            {
                 _loadCompletion?.TrySetException(disconnected);
+                _seekCompletion?.TrySetException(disconnected);
+            }
             try { ConnectionClosed?.Invoke(this, EventArgs.Empty); } catch { }
         }
     }
@@ -342,6 +376,13 @@ public sealed class MpvPlayer : IAsyncDisposable
         {
             if (eventName == "start-file") _loadingStarted = true;
             if (eventName == "file-loaded") _loadCompletion?.TrySetResult(true);
+            if (eventName == "seek") _seekingStarted = true;
+            if (eventName == "playback-restart" && _seekingStarted) _seekCompletion?.TrySetResult(true);
+            if (eventName == "end-file" && data.TryGetProperty("reason", out var seekEnd))
+            {
+                if (seekEnd.GetString() == "eof") _seekCompletion?.TrySetResult(true);
+                else _seekCompletion?.TrySetException(new MpvException(MpvErrorCode.MediaFailed, "Playback ended during seek."));
+            }
             if (eventName == "end-file" && _loadingStarted && data.TryGetProperty("reason", out var loadReason) && loadReason.GetString() == "error")
                 _loadCompletion?.TrySetException(new MpvException(MpvErrorCode.MediaFailed, "mpv could not load the requested media."));
         }
@@ -410,5 +451,7 @@ public sealed class MpvPlayer : IAsyncDisposable
             _socketDirectory = null;
         }
         _endpoint = null;
+        _processJob?.Dispose();
+        _processJob = null;
     }
 }

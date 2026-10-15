@@ -115,7 +115,14 @@ public sealed class LibraryTests
         f.Player.End(generation: old);
         await f.Session.CheckpointAsync(token: Token);
         Assert.Equal(second, f.Session.Snapshot.Playback.CurrentId);
-        f.Player.End("error");
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            f.Player.End("error");
+            await UntilAsync(() => f.Session.Snapshot.RecoveryPending);
+            Assert.Equal(second, f.Session.Snapshot.Playback.CurrentId);
+            await f.Session.RetryRecoveryAsync(immediate: true, token: Token);
+        }
+        f.Player.End("error"); // Repeated media errors eventually skip, without a false completion.
         await UntilAsync(() => f.Session.Snapshot.Playback.CurrentId == f.Session.Snapshot.Queue[2].Id);
         Assert.Equal(0, f.Session.Snapshot.Queue[1].CompletedCount);
         Assert.Equal(EntryAvailability.Failed, f.Session.Snapshot.Entries[1].Availability);
@@ -200,11 +207,12 @@ public sealed class LibraryTests
         await f.Session.PlayAsync(token: Token);
         await f.Session.SeekAsync(TimeSpan.FromSeconds(18), Token);
         f.Player.End("disconnect");
-        await UntilAsync(() => f.Session.Snapshot.Playback.Intent == PlaybackIntent.Paused);
+        await UntilAsync(() => f.Session.Snapshot.RecoveryPending);
+        Assert.Equal(PlaybackIntent.Playing, f.Session.Snapshot.Playback.Intent);
         Assert.Equal(18, f.Session.Snapshot.Playback.PositionSeconds);
         Assert.Single(f.Content.Resolved);
         Assert.All(f.Session.Snapshot.Queue, q => Assert.Equal(0, q.CompletedCount));
-        await f.Session.PlayAsync(token: Token);
+        await f.Session.RetryRecoveryAsync(immediate: true, token: Token);
         Assert.Equal(TimeSpan.FromSeconds(18), f.Player.Loads[^1].Position);
     }
 
