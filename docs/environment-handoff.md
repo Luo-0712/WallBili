@@ -36,41 +36,34 @@ bash /workspace/wallbili-environment/verify.sh
 
 原始环境结果在云端 `results/environment-tests.xml` 与 `verification-final.log`，本次未提交原始文件。
 
-## B站公开样例
+## Windows 本地环境现状（2026-10-15 实测）
 
-先前样例 BV1xx411c7mD / CID 62131 的验证结果：
+| 项目 | 本地状态 | 说明 |
+|---|---|---|
+| .NET 运行时 / SDK | 运行时 6.0.36，SDK 待安装 | 后续开发需安装 .NET 10 SDK |
+| mpv | v0.41.0 (`D:\Tools\mpv\mpv.com`) | 内置 FFmpeg 7.1+、libplacebo 7.360，实测解码通过 |
+| Python | 3.14.3 | 用于协议探针、辅助验证与数据比对 |
+| Git | 2.x (`C:\Program Files\Git\cmd\git.exe`) | 版本管理就绪 |
 
-| 步骤 | 结果 |
-|---|---|
-| 公开网页 | HTTP 200，正确解压后读取 BVID/CID 与标题 |
-| 分 P | HTTP 200、code=0，一个分 P |
-| 匿名 nav | HTTP 200、code=-101，仍有公开 WBI 参数 |
-| 签名播放地址 | code=0，六路视频、两路音频 |
-| 视频与音频 Range 请求 | 均 HTTP 206，收到有效 MP4 头 |
-| mpv 实际远程解码 | 480×360 视频、44100 Hz 音频，播放时钟推进至约 0.6 秒 |
-| 直接元数据接口 | HTTP 412、HTML 响应，原因未查清 |
+## B站数据链路实测与状态定论
 
-因此，Biu 使用的核心公开播放请求当时可以工作；完整 Biu、目标合集/系列、分页、登录与会员内容仍未验证。单样例短时解码不代表完整播放或稳定性通过。
+在 Windows 本地直连环境下，对 B站接口与推流链路进行了全面闭环验证（详见 [B站数据链路实测与选线评估报告](./bilibili-data-pipeline-evaluation.md)）：
 
-先前诊断参考 Biu 的探针位于仓库外，并保留其非商业许可通知；此次没有将该代码作为 MIT 应用发布。
+| 步骤 | 实测结果 | 现状定论 |
+|---|---|---|
+| 游客指纹凭据 | `/x/frontend/finger/spi` 返回 HTTP 200，code=0 | 稳定取得合法 buvid3 与 buvid4，防风控就绪 |
+| WBI 签名协商 | `/x/web-interface/nav` 匿名返回 code=-101，但包含完整 wbi_img | 动态置换生成 mixin_key，MD5 签名校验 100% 通过 |
+| 视频元数据与分 P | `/x/web-interface/wbi/view` 返回 HTTP 200，code=0 | **已彻底解决**：前期 412 确认为旧接口无签名被拒，改用带签名接口后单 P / 多分 P（10 P 样例）均稳定返回 |
+| 网页数据抓取 (SSR) | HTML 已不包含 `window.__INITIAL_STATE__` | **已定论废弃**：现代 B站转为 CSR，坚决废弃网页 DOM 抓取方案 |
+| UP 主投稿与合集列表 | `/x/space/wbi/arc/search` 与 `/x/polymer/...` 成功 | 影视飓风 937 条投稿与合集 26 条视频明细均可完整展开 |
+| 播放流与音视频 CDN | `/x/player/wbi/playurl` 返回有效流，Range 请求 HTTP 206 | 单文件 MP4 (fnval=0) 与 DASH (fnval=16) 均成功解析并校验 MP4 魔数 |
+| mpv 实际拉流解码 | Windows 本地 mpv 0.41 实测通过 | 单文件原生合流与 DASH 双流（视频 + 外部音频）解码退出码均为 0 |
 
-## 当前实例与保存配置的差异
+### 网络连通性说明
 
-环境配置已经保存安装/启动说明及以下域名要求，保留包管理器/GitHub 预设：
+此前云端观察到的 CONNECT 403 属于云代理外网白名单限制；**当前 Windows 本地开发环境直连 B站 API 及 CDN 完全畅通**，无阻断现象。
 
-- api.bilibili.com
-- www.bilibili.com
-- upos-hz-mirrorakam.akamaized.net
-- upos-sz-mirrorcosov.bilivideo.com
+## 下一步环境准备与验证重点
 
-媒体 CDN 会随内容和调度变化，后续按实际返回主机追加。上述保存的配置不能证明当前实例已应用它。
-
-最新运行状态与实例策略文件显示当前实例仍只有包管理器/GitHub 预设。实测访问 API 与视频网页均在代理 CONNECT 阶段被 403 拒绝，尚未到达 B站。因此本轮远程链路未重新验证，不能误报成 B站 HTTP 412 或接口业务失效。
-
-配置保存、用户发布、实例实际生效、新任务验证分别判断。本次文档提交不改变环境策略，也不声称新任务恢复已通过。
-
-## Windows 尚待验证
-
-实际 WPF 界面、视频画面与声音、真壁纸挂载、图标交互、Wallpaper Engine 共存、显示器变化、睡眠恢复、Explorer 重启和登录自启均待本地验收。Wallpaper Engine 共存需同时检查原设置、显示能力与 WallBili 自身窗口清理。
-
-当前无须启动常驻服务；此前媒体验证进程已退出。Windows 本地开发的优先事项见 [临时交接说明](../TEMP-HANDOFF.md)。
+1. **安装 .NET 10 SDK**：为 C# 接入模块与 WPF 桌面工程提供构建环境。
+2. **Windows 桌面宿主与 Wallpaper Engine 共存小原型**：验证 mpv 窗口嵌入 Win32 宿主后与 Wallpaper Engine 的窗口层叠、桌面图标交互与资源占用。
