@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- RID-specific publishing must not rewrite the checked-in portable restore locks. -->
+    <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' != ''">$(MSBuildProjectDirectory)/obj/packages.$(RuntimeIdentifier).lock.json</NuGetLockFilePath>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>
