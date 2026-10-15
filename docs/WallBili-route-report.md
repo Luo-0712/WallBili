@@ -1,8 +1,8 @@
-**WallBili 技术调研与路线规划（历史调研）**
+**WallBili 技术调研与路线规划**
 
-原始调研日期：2026-10-14。目标仓库：`Luo-0712/WallBili`。本文保留当时的候选比较与观察；下文“当前”“本次”“本轮”和待选分支均指原始调研时点。最新事实以 [临时交接说明](../TEMP-HANDOFF.md)、[B站数据链路实测与技术选线评估报告](./bilibili-data-pipeline-evaluation.md)、[技术选型](./WallBili-stack-proposal.md) 和 [MVP 计划](./WallBili-mvp-plan.md) 为准。
+调研日期：2026-10-14。目标仓库：`Luo-0712/WallBili`，当前只有 MIT 许可证文件。
 
-最新规划入口：[WallBili 初版开发计划](./WallBili-mvp-plan.md)。用户已确定 MVP 按“拿到 B 站内容 → 维护合集与队列 → 将视频输出接入真正的桌面壁纸层”三阶段实现；复用组合与视觉细节保持灵活；技术栈现已确认 C#/.NET 10 + WPF + SQLite + mpv，视频做壁纸已确定。以下为候选技术调研与历史分支说明，开发阶段与当前交付范围以初版开发计划为准。
+最新规划入口：[WallBili 初版开发计划](./WallBili-mvp-plan.md)。用户已确定 MVP 按“拿到 B 站内容 → 维护合集与队列 → 将视频输出接入真正的桌面壁纸层”三阶段实现；A/B/C/D、T 与视觉细节保持灵活，但视频做壁纸已确定。以下为候选技术调研与历史分支说明，开发阶段与当前交付范围以初版开发计划为准。
 
 最新已确认技术栈：[C#/.NET 10 + WPF + SQLite + mpv](./WallBili-stack-proposal.md)，已执行云端初始化。当前结果见[初始化记录](./environment-handoff.md)：三个环境检查、WPF 编译与样例媒体短时远程解码已通过；部分 API 和 Windows 实机行为仍待验证。以下旧候选比较和早期网络观察保留作历史参考，当前状态以初始化记录为准。
 
