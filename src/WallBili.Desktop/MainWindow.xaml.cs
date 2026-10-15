@@ -1,13 +1,17 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Microsoft.Data.Sqlite;
 using WallBili.Core;
 using WallBili.Infrastructure.Bilibili;
+using WallBili.Infrastructure.Storage;
 using WallBili.Player.Mpv;
 
 namespace WallBili.Desktop;
@@ -16,464 +20,237 @@ public partial class MainWindow : Window
 {
     private readonly HttpClient _http = new(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All })
         { Timeout = TimeSpan.FromSeconds(30) };
-    private readonly BilibiliClient _bilibili;
     private readonly CancellationTokenSource _lifetime = new();
-    private readonly DispatcherTimer _positionTimer = new() { Interval = TimeSpan.FromSeconds(1) };
-    private MpvPlayer? _player;
-    private string? _playerPath;
-    private ContentKey? _activeContent;
-    private TimeSpan _position;
-    private TimeSpan _duration;
-    private bool _busy;
-    private bool _polling;
-    private bool _canControl;
-    private bool _paused;
-    private bool _closing;
-    private bool _closed;
-    private Task _pendingOperation = Task.CompletedTask;
-    private int _playbackVersion;
-    private bool _loadingMedia;
-    private (int Version, PlaybackEndedEventArgs Event)? _pendingPlaybackEnd;
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private readonly LibrarySession _library;
+    private Task _pending = Task.CompletedTask;
+    private bool _busy, _closing, _closed, _rendering, _ready;
+    private string _mpvPath;
+    private string _savedMpvPath;
+    private readonly string _preferencesPath;
 
     public MainWindow()
     {
         InitializeComponent();
-        _bilibili = new BilibiliClient(_http);
-        MpvPathInput.Text = Environment.GetEnvironmentVariable("MPV_PATH") ?? "mpv";
-        _positionTimer.Tick += PositionTimer_Tick;
-        _positionTimer.Start();
-    }
-
-    private async void Fetch_Click(object sender, RoutedEventArgs e) => await FetchVideoAsync();
-
-    private async void VideoInput_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && !_busy)
+        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WallBili");
+        _preferencesPath = Path.Combine(directory, "preferences.json");
+        string? savedPath = null;
+        try
         {
-            e.Handled = true;
-            await FetchVideoAsync();
+            if (File.Exists(_preferencesPath)) savedPath = JsonSerializer.Deserialize<DesktopPreferences>(File.ReadAllText(_preferencesPath))?.MpvPath;
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+        _mpvPath = string.IsNullOrWhiteSpace(savedPath) ? Environment.GetEnvironmentVariable("MPV_PATH") ?? "mpv" : savedPath;
+        _savedMpvPath = _mpvPath;
+        MpvPathInput.Text = _mpvPath;
+        var player = new MpvQueuePlayer(() => new() { ExecutablePath = Volatile.Read(ref _mpvPath) });
+        _library = new(new BilibiliClient(_http), new SqliteLibraryStore(Path.Combine(directory, "library.db")), player);
+        _library.Changed += (_, _) => _ = Dispatcher.InvokeAsync(Render);
+        _timer.Tick += async (_, _) =>
+        {
+            if (!_busy && !_closing && _ready) await RunAsync(ct => _library.CheckpointAsync(ct));
+        };
     }
 
-    private async Task FetchVideoAsync()
+    private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        var input = VideoInput.Text.Trim();
-        if (input.Length == 0)
-        {
-            SetStatus("请输入视频链接或 BV 号。", true);
-            return;
-        }
-
-        await RunOperationAsync("正在获取视频信息…", async token =>
-        {
-            var requestedPage = BilibiliInput.Parse(input).Page;
-            var video = await _bilibili.GetVideoAsync(input, token);
-            VideoTitle.Text = video.Title;
-            VideoMetadata.Text = $"UP 主：{video.Uploader} · {video.Bvid} · 共 {video.Parts.Count} P · {FormatTime(video.Duration)}";
-            PartsBox.ItemsSource = video.Parts;
-            PartsBox.SelectedItem = video.Parts.FirstOrDefault(part => part.Page == requestedPage) ?? video.Parts.FirstOrDefault();
-            SetStatus(video.Parts.Count > 0 ? "视频信息已获取，请选择分 P 后播放。" : "该视频没有可播放的分 P。", video.Parts.Count == 0);
-        });
+        await RunAsync(async ct => { await _library.InitializeAsync(ct); _ready = true; VolumeSlider.Value = _library.Snapshot.Playback.Volume; }, initializing: true);
+        if (_ready) VolumeSlider.Value = _library.Snapshot.Playback.Volume;
+        _timer.Start();
     }
-
-    private void PartsBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void ImportVideo_Click(object sender, RoutedEventArgs e) =>
+        await RunAsync(ct => _library.ImportVideoAsync(VideoInput.Text.Trim(), ct), "正在导入视频及分 P…");
+    private async void ImportCollection_Click(object sender, RoutedEventArgs e) =>
+        await RunAsync(ct => _library.ImportCollectionAsync(BilibiliCollectionInput.Parse(CollectionInput.Text), ct), "正在读取合集全部分页与分 P…");
+    private async void ImportIds_Click(object sender, RoutedEventArgs e) => await RunAsync(ct =>
     {
-        if (SelectedPartText is not null)
-        {
-            SelectedPartText.Text = PartsBox.SelectedItem is VideoPart part
-                ? $"所选分 P：{part.Key.Bvid} · CID {part.Key.Cid} · {FormatTime(part.Duration)}"
-                : string.Empty;
-        }
-        UpdateControls();
-    }
-
-    private async void Play_Click(object sender, RoutedEventArgs e)
+        if (!long.TryParse(UploaderInput.Text, out var uid) || uid <= 0 ||
+            !long.TryParse(CollectionIdInput.Text, out var id) || id <= 0) throw new ArgumentException();
+        return _library.ImportCollectionAsync(new(uid, id, KindBox.SelectedIndex == 0 ? CollectionKind.Season : CollectionKind.Series), ct);
+    }, "正在读取合集全部分页与分 P…");
+    private async void RefreshSource_Click(object sender, RoutedEventArgs e)
     {
-        if (PartsBox.SelectedItem is not VideoPart part)
-        {
-            return;
-        }
-
-        await RunOperationAsync("正在解析音视频并启动播放器…", async token =>
-        {
-            var session = await _bilibili.ResolveMediaAsync(part.Key, token);
-            var player = await EnsurePlayerAsync(token);
-            _canControl = false;
-            _playbackVersion++;
-            _activeContent = part.Key;
-            _position = TimeSpan.Zero;
-            _duration = part.Duration;
-            await LoadMediaAsync(player, session, token);
-            await player.ResumeAsync(token);
-            _paused = false;
-            _canControl = true;
-            UpdatePosition();
-            ShowSession(session);
-            SetStatus($"正在播放 P{part.Page} · {part.Title}");
-        });
+        if (SourcesBox.SelectedItem is SourceRow { Id.Length: > 0 } source)
+            await RunAsync(ct => _library.RefreshSourceAsync(source.Id, ct), "正在刷新来源，播放将继续…");
     }
-
-    private async void Pause_Click(object sender, RoutedEventArgs e)
+    private async void RemoveSource_Click(object sender, RoutedEventArgs e)
     {
-        await RunOperationAsync("正在暂停…", async token =>
-        {
-            await _player!.PauseAsync(token);
-            _paused = true;
-            SetStatus("已暂停。");
-        });
+        if (SourcesBox.SelectedItem is SourceRow { Id.Length: > 0 } source)
+            await RunAsync(ct => _library.RemoveSourceAsync(source.Id, ct));
     }
-
-    private async void Resume_Click(object sender, RoutedEventArgs e)
+    private async void Enqueue_Click(object sender, RoutedEventArgs e)
     {
-        await RunOperationAsync("正在继续播放…", async token =>
-        {
-            await _player!.ResumeAsync(token);
-            _paused = false;
-            SetStatus("正在播放。");
-        });
+        var selected = CatalogGrid.SelectedItems.Cast<EntryRow>().Select(row => row.Entry.Key).ToHashSet();
+        var keys = CatalogGrid.Items.Cast<EntryRow>().Where(row => selected.Contains(row.Entry.Key)).Select(row => row.Entry.Key).ToArray();
+        await RunAsync(ct => _library.EnqueueAsync(keys, ct));
     }
-
-    private async void Seek_Click(object sender, RoutedEventArgs e)
+    private async void EnqueueAll_Click(object sender, RoutedEventArgs e)
+    {
+        var keys = CatalogGrid.Items.Cast<EntryRow>().Select(row => row.Entry.Key).ToArray();
+        await RunAsync(ct => _library.EnqueueAsync(keys, ct));
+    }
+    private async void DeleteEntry_Click(object sender, RoutedEventArgs e)
+    {
+        var keys = CatalogGrid.SelectedItems.Cast<EntryRow>().Select(row => row.Entry.Key).ToArray();
+        await RunAsync(async ct => { foreach (var key in keys) await _library.RemoveEntryAsync(key, ct); });
+    }
+    private async void EntryUp_Click(object sender, RoutedEventArgs e) => await MoveEntryAsync(-1);
+    private async void EntryDown_Click(object sender, RoutedEventArgs e) => await MoveEntryAsync(1);
+    private async Task MoveEntryAsync(int offset)
+    {
+        if (CatalogGrid.SelectedItem is not EntryRow row) return;
+        var visible = CatalogGrid.Items.Cast<EntryRow>().ToList();
+        var index = visible.IndexOf(row);
+        var target = Math.Clamp(index + offset, 0, visible.Count - 1);
+        var all = _library.Snapshot.Entries.ToList();
+        var delta = all.FindIndex(e => e.Key == visible[target].Entry.Key) - all.FindIndex(e => e.Key == row.Entry.Key);
+        await RunAsync(ct => _library.MoveEntryAsync(row.Entry.Key, delta, ct));
+    }
+    private async void QueueUp_Click(object sender, RoutedEventArgs e) => await MoveQueueAsync(-1);
+    private async void QueueDown_Click(object sender, RoutedEventArgs e) => await MoveQueueAsync(1);
+    private async Task MoveQueueAsync(int offset)
+    {
+        if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.MoveQueueAsync(row.Id, offset, ct));
+    }
+    private async void RemoveQueue_Click(object sender, RoutedEventArgs e)
+    {
+        if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.RemoveQueueAsync(row.Id, ct));
+    }
+    private async void PlaySelected_Click(object sender, RoutedEventArgs e) => await PlaySelectedAsync();
+    private async void Queue_DoubleClick(object sender, MouseButtonEventArgs e) => await PlaySelectedAsync();
+    private async Task PlaySelectedAsync()
+    {
+        if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.PlayAsync(row.Id, ct), "正在解析并播放…");
+    }
+    private async void Play_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PlayAsync(token: ct));
+    private async void Pause_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PauseAsync(ct));
+    private async void Stop_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.StopAsync(ct));
+    private async void Previous_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PreviousAsync(ct));
+    private async void Next_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.NextAsync(ct));
+    private async void Reload_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.ReloadAsync(ct));
+    private async void Seek_Click(object sender, RoutedEventArgs e) => await RunAsync(ct =>
     {
         if (!double.TryParse(SeekInput.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) ||
-            !double.IsFinite(seconds) || seconds < 0 || seconds > TimeSpan.MaxValue.TotalSeconds ||
-            (_duration > TimeSpan.Zero && seconds > _duration.TotalSeconds))
-        {
-            SetStatus("请输入有效的跳转秒数，且不要超过视频时长。", true);
-            return;
-        }
-
-        await RunOperationAsync("正在跳转…", async token =>
-        {
-            await _player!.SeekAsync(TimeSpan.FromSeconds(seconds), token);
-            _position = TimeSpan.FromSeconds(seconds);
-            UpdatePosition();
-            SetStatus($"已跳转至 {FormatTime(_position)}。");
-        });
-    }
-
-    private async void Refresh_Click(object sender, RoutedEventArgs e)
+            !double.IsFinite(seconds) || seconds < 0 || seconds > TimeSpan.MaxValue.TotalSeconds) throw new ArgumentException();
+        return _library.SeekAsync(TimeSpan.FromSeconds(seconds), ct);
+    });
+    private async void Volume_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.SetVolumeAsync(VolumeSlider.Value, ct));
+    private async void Mode_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (_activeContent is not { } content)
-        {
-            return;
-        }
-
-        await RunOperationAsync("正在重新解析播放地址…", async token =>
-        {
-            var position = _position;
-            var paused = _paused;
-            var session = await _bilibili.ResolveMediaAsync(content, token);
-            if (_canControl && _player is not null)
-            {
-                try
-                {
-                    var seconds = await _player.GetPropertyAsync<double?>("time-pos", token);
-                    if (seconds is { } value && double.IsFinite(value) && value >= 0)
-                    {
-                        position = TimeSpan.FromSeconds(value);
-                    }
-                }
-                catch (MpvException)
-                {
-                    // A failed/expired stream can lose IPC time-pos; retain the last observed position.
-                }
-            }
-
-            var player = await EnsurePlayerAsync(token);
-            _canControl = false;
-            _playbackVersion++;
-            await LoadMediaAsync(player, session, token);
-            if (position > TimeSpan.Zero)
-            {
-                await player.SeekAsync(position, token);
-            }
-
-            if (paused)
-            {
-                await player.PauseAsync(token);
-            }
-            else
-            {
-                await player.ResumeAsync(token);
-            }
-
-            _position = position;
-            _paused = paused;
-            _canControl = true;
-            UpdatePosition();
-            ShowSession(session);
-            SetStatus($"已重新解析并恢复至 {FormatTime(position)}{(paused ? "（已暂停）" : "。")}");
-        });
+        if (_rendering || !_ready) return;
+        await RunAsync(ct => _library.SetModeAsync(ModeBox.SelectedIndex == 0 ? QueueMode.Sequential : QueueMode.RepeatAll, ct));
     }
+    private void Sources_Changed(object sender, SelectionChangedEventArgs e) { if (!_rendering && _ready) Render(); }
 
-    private async Task<MpvPlayer> EnsurePlayerAsync(CancellationToken token)
+    private void Render()
     {
-        var path = MpvPathInput.Text.Trim();
-        if (path.Length == 0)
-        {
-            path = "mpv";
-        }
-
-        if (_player is not null && !string.Equals(_playerPath, path, StringComparison.Ordinal))
-        {
-            await DisposePlayerAsync();
-        }
-
-        if (_player is null)
-        {
-            var player = new MpvPlayer(new MpvPlayerOptions { ExecutablePath = path });
-            player.PlaybackEnded += Player_PlaybackEnded;
-            _player = player;
-            _playerPath = path;
-        }
-
+        if (_closing) return;
+        _rendering = true;
         try
         {
-            await _player.StartAsync(token);
-            return _player;
+            var snapshot = _library.Snapshot;
+            var selectedSource = (SourcesBox.SelectedItem as SourceRow)?.Id ?? "";
+            var selectedEntries = CatalogGrid.SelectedItems.Cast<EntryRow>().Select(r => r.Entry.Key).ToHashSet();
+            var selectedQueue = (QueueGrid.SelectedItem as QueueRow)?.Id;
+            SourcesBox.ItemsSource = new[] { new SourceRow("", $"全部视频（{snapshot.Entries.Count}）") }
+                .Concat(snapshot.Sources.Select(s => new SourceRow(s.Id, $"{s.Title}（{s.Members.Count}）"))).ToArray();
+            SourcesBox.SelectedItem = SourcesBox.Items.Cast<SourceRow>().FirstOrDefault(s => s.Id == selectedSource) ?? SourcesBox.Items[0];
+            var source = snapshot.Sources.FirstOrDefault(s => s.Id == (SourcesBox.SelectedItem as SourceRow)?.Id);
+            CatalogGrid.ItemsSource = snapshot.Entries.Where(e => source is null || source.Members.Contains(e.Key))
+                .Select(e => new EntryRow(e, Availability(e))).ToArray();
+            foreach (var row in CatalogGrid.Items.Cast<EntryRow>()) if (selectedEntries.Contains(row.Entry.Key)) CatalogGrid.SelectedItems.Add(row);
+            var entries = snapshot.Entries.ToDictionary(e => e.Key);
+            QueueGrid.ItemsSource = snapshot.Queue.Select(q => new QueueRow(q.Id,
+                q.Id == snapshot.Playback.CurrentId ? "▶" : "", entries[q.Key].Title, Availability(entries[q.Key]))).ToArray();
+            QueueGrid.SelectedItem = QueueGrid.Items.Cast<QueueRow>().FirstOrDefault(q => q.Id == selectedQueue);
+            QueueTitle.Text = $"播放队列（{snapshot.Queue.Count}）";
+            var intent = snapshot.Playback.Intent switch { PlaybackIntent.Playing => "播放中", PlaybackIntent.Paused => "已暂停", _ => "已停止" };
+            CurrentText.Text = snapshot.Current is { } current ? $"{intent} · {current.Title}" : "尚未选择播放项";
+            var duration = snapshot.Current?.Duration ?? TimeSpan.Zero;
+            var position = TimeSpan.FromSeconds(snapshot.Playback.PositionSeconds);
+            PositionText.Text = $"{Format(position)} / {Format(duration)}";
+            Progress.Maximum = Math.Max(1, duration.TotalSeconds);
+            Progress.Value = Math.Clamp(position.TotalSeconds, 0, Progress.Maximum);
+            ModeBox.SelectedIndex = snapshot.Playback.Mode == QueueMode.Sequential ? 0 : 1;
+            StatusText.Text = snapshot.Notice;
         }
-        catch
-        {
-            await DisposePlayerAsync();
-            throw;
-        }
+        finally { _rendering = false; }
     }
 
-    private async Task LoadMediaAsync(MpvPlayer player, MediaSession session, CancellationToken token)
+    private async Task RunAsync(Func<CancellationToken, Task> operation, string? notice = null, bool initializing = false)
     {
-        _pendingPlaybackEnd = null;
-        _loadingMedia = true;
-        try
-        {
-            await player.LoadAsync(session, token);
-        }
-        finally
-        {
-            _loadingMedia = false;
-        }
-    }
-
-    private void Player_PlaybackEnded(object? sender, PlaybackEndedEventArgs e)
-    {
-        _ = Dispatcher.InvokeAsync(() =>
-        {
-            if (_closing || !ReferenceEquals(sender, _player) || _loadingMedia)
-            {
-                return;
-            }
-
-            if (_busy)
-            {
-                _pendingPlaybackEnd = (_playbackVersion, e);
-                return;
-            }
-
-            ApplyPlaybackEnd(e);
-        });
-    }
-
-    private void ApplyPlaybackEnd(PlaybackEndedEventArgs e)
-    {
-        _canControl = false;
-        SetStatus(e.IsError ? "播放失败。可尝试重新解析并恢复进度。" : "播放已结束，可重新播放或重新解析。", e.IsError);
-        UpdateControls();
-    }
-
-    private async void PositionTimer_Tick(object? sender, EventArgs e)
-    {
-        if (_polling || _busy || !_canControl || _player is null || _closing)
-        {
-            return;
-        }
-
-        _polling = true;
-        var player = _player;
-        var version = _playbackVersion;
-        try
-        {
-            var seconds = await player.GetPropertyAsync<double?>("time-pos", _lifetime.Token);
-            if (!_busy && !_closing && version == _playbackVersion && ReferenceEquals(player, _player) &&
-                seconds is { } value && double.IsFinite(value) && value >= 0)
-            {
-                _position = TimeSpan.FromSeconds(value);
-                UpdatePosition();
-            }
-        }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            if (!_closing && !_busy && version == _playbackVersion && ReferenceEquals(player, _player))
-            {
-                _canControl = false;
-                SetStatus(DescribeError(ex), true);
-                UpdateControls();
-            }
-        }
-        finally
-        {
-            _polling = false;
-        }
-    }
-
-    private async Task RunOperationAsync(string message, Func<CancellationToken, Task> operation)
-    {
-        if (_busy || _closing)
-        {
-            return;
-        }
-
+        if (_busy || _closing || (!_ready && !initializing)) return;
         _busy = true;
-        UpdateControls();
-        SetStatus(message);
+        Volatile.Write(ref _mpvPath, string.IsNullOrWhiteSpace(MpvPathInput.Text) ? "mpv" : MpvPathInput.Text.Trim());
+        ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = false;
+        if (notice is not null) StatusText.Text = notice;
         try
         {
-            _pendingOperation = operation(_lifetime.Token);
-            await _pendingOperation;
+            if (_savedMpvPath != _mpvPath)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_preferencesPath)!);
+                var temporary = _preferencesPath + ".tmp";
+                File.WriteAllText(temporary, JsonSerializer.Serialize(new DesktopPreferences(_mpvPath)));
+                File.Move(temporary, _preferencesPath, overwrite: true);
+                _savedMpvPath = _mpvPath;
+            }
+            _pending = operation(_lifetime.Token); await _pending; Render();
         }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
-        {
-        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            SetStatus(DescribeError(ex), true);
+            StatusText.Text = ex switch
+            {
+                ContentAccessException content => $"来源访问失败（{Failure(content.Kind.ToString())}），请检查输入或稍后重试。",
+                MpvException player => $"播放器错误（{player.Code}），请检查 mpv 路径后重试。",
+                SqliteException or IOException or UnauthorizedAccessException => "本地资料读写失败，请检查磁盘空间及应用数据目录权限。",
+                ArgumentException or FormatException => "输入无效，请检查链接、ID 或跳转秒数。",
+                OperationCanceledException or HttpRequestException => "网络请求失败或超时，请稍后重试。",
+                _ => "操作未完成，请检查来源与播放器配置后重试。"
+            };
         }
         finally
         {
             _busy = false;
-            UpdateControls();
-            if (!_closing && _pendingPlaybackEnd is { } ended)
-            {
-                _pendingPlaybackEnd = null;
-                if (ended.Version == _playbackVersion)
-                {
-                    ApplyPlaybackEnd(ended.Event);
-                }
-            }
+            _ready = _library.IsInitialized;
+            ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = _ready && !_closing;
         }
     }
 
-    private static string DescribeError(Exception ex) => ex switch
+    private static string Availability(CatalogEntry entry) => entry.Availability switch
     {
-        ContentAccessException content => content.Kind switch
-        {
-            ContentFailureKind.InvalidInput => "输入无效，请填写 bilibili 视频链接或 BV 号。",
-            ContentFailureKind.Removed => "视频已失效或已被删除。",
-            ContentFailureKind.AuthenticationRequired => "视频需要登录或额外权限，请选择可公开访问的视频。",
-            ContentFailureKind.RateLimited => "请求过于频繁，请稍后重试。",
-            ContentFailureKind.Network => "网络请求失败，请检查连接后重试。",
-            ContentFailureKind.Unsupported => "当前内容或媒体格式暂不支持。",
-            ContentFailureKind.Inaccessible => "当前无法访问该视频，请检查视频是否公开可用。",
-            _ => "视频服务返回了无法识别的数据，请稍后重试。"
-        },
-        MpvException mpv => $"播放器错误（{mpv.Code}）：{mpv.Message}",
-        HttpRequestException => "网络请求失败，请检查网络连接后重试。",
-        OperationCanceledException => "请求超时，请重试。",
-        ArgumentException => "输入无效，请检查视频链接或 BV 号。",
-        _ => "操作失败，请检查视频是否可访问以及 mpv 配置后重试。"
+        EntryAvailability.Available => "可播放", EntryAvailability.Failed => "失败：" + Failure(entry.Failure), _ => "待播放"
     };
-
-    private void ShowSession(MediaSession session)
+    private static string Failure(string? failure) => failure switch
     {
-        var expiry = session.ExpiresAt is { } expires ? $" · 到期时间 {expires.ToLocalTime():HH:mm:ss}" : string.Empty;
-        SessionText.Text = $"当前播放：{session.Content.Bvid} · CID {session.Content.Cid}\n" +
-                           $"视频：{session.Video.Codec} · 清晰度 {session.Video.Quality}" +
-                           $" · 音频：{session.Audio?.Codec ?? "无独立音轨"}" + expiry;
-    }
-
-    private void SetStatus(string text, bool isError = false)
-    {
-        StatusText.Text = text;
-        StatusText.Foreground = isError ? System.Windows.Media.Brushes.Firebrick : System.Windows.Media.Brushes.DarkSlateGray;
-    }
-
-    private void UpdateControls()
-    {
-        if (FetchButton is null)
-        {
-            return;
-        }
-
-        var available = !_busy && !_closing;
-        FetchButton.IsEnabled = available;
-        VideoInput.IsEnabled = available;
-        MpvPathInput.IsEnabled = available;
-        PartsBox.IsEnabled = available && PartsBox.HasItems;
-        PlayButton.IsEnabled = available && PartsBox.SelectedItem is VideoPart;
-        PauseButton.IsEnabled = available && _canControl && !_paused;
-        ResumeButton.IsEnabled = available && _canControl && _paused;
-        RefreshButton.IsEnabled = available && _activeContent is not null;
-        SeekInput.IsEnabled = available && _canControl;
-        SeekButton.IsEnabled = available && _canControl;
-    }
-
-    private void UpdatePosition()
-    {
-        PositionText.Text = $"{FormatTime(_position)} / {FormatTime(_duration)}";
-        PlaybackProgress.Maximum = Math.Max(_duration.TotalSeconds, 1);
-        PlaybackProgress.Value = Math.Clamp(_position.TotalSeconds, 0, PlaybackProgress.Maximum);
-    }
-
-    private static string FormatTime(TimeSpan time) => time.TotalHours >= 1
-        ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}"
-        : $"{(int)time.TotalMinutes:00}:{time.Seconds:00}";
-
-    private async Task DisposePlayerAsync()
-    {
-        var player = _player;
-        _player = null;
-        _playerPath = null;
-        _canControl = false;
-        _playbackVersion++;
-        _pendingPlaybackEnd = null;
-        if (player is not null)
-        {
-            player.PlaybackEnded -= Player_PlaybackEnded;
-            await player.DisposeAsync();
-        }
-    }
+        "Removed" => "已失效", "AuthenticationRequired" => "需要权限", "Network" => "网络错误",
+        "RateLimited" => "请求频繁", "Unsupported" or "MediaFailed" => "播放失败", "Inaccessible" => "不可访问", _ => "访问错误"
+    };
+    private static string Format(TimeSpan time) => time.TotalHours >= 1
+        ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}" : $"{(int)time.TotalMinutes:00}:{time.Seconds:00}";
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
-        if (_closed)
-        {
-            return;
-        }
-
+        if (_closed) return;
         e.Cancel = true;
-        if (_closing)
-        {
-            return;
-        }
-
+        if (_closing) return;
         _closing = true;
-        _positionTimer.Stop();
-        _lifetime.Cancel();
-        UpdateControls();
+        _timer.Stop(); _lifetime.Cancel();
+        IsEnabled = false;
         try
         {
-            try
-            {
-                await _pendingOperation;
-            }
-            catch (Exception)
-            {
-                // The operation reports its own safe error; closing still waits for cleanup.
-            }
-            await DisposePlayerAsync();
+            try { await _pending; } catch { }
+            await _library.DisposeAsync();
         }
-        catch (Exception)
+        catch
         {
-            // MpvPlayer owns process cleanup, including forced termination in DisposeAsync.
+            MessageBox.Show("最后一次进度未能保存，将使用上次保存的进度恢复。", "WallBili", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-        finally
-        {
-            _http.Dispose();
-            _lifetime.Dispose();
-            _closed = true;
-            Close();
-        }
+        finally { _http.Dispose(); _lifetime.Dispose(); _closed = true; Close(); }
     }
+
+    private sealed record SourceRow(string Id, string Title);
+    private sealed record EntryRow(CatalogEntry Entry, string Status);
+    private sealed record QueueRow(Guid Id, string Marker, string Title, string Status);
+    private sealed record DesktopPreferences(string MpvPath);
 }
