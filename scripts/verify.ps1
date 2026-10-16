@@ -16,3 +16,4 @@ Invoke-Dotnet build WallBili.slnx -c Release --no-restore "-m:1"
 Invoke-Dotnet run --project tests/WallBili.Infrastructure.Tests -c Release --no-build -- -result-xml work/content-tests.xml -nologo
 Invoke-Dotnet run --project tests/WallBili.Player.Mpv.Tests -c Release --no-build -- -result-xml work/player-tests.xml -nologo
 Invoke-Dotnet run --project tests/WallBili.Library.Tests -c Release --no-build -- -result-xml work/library-tests.xml -nologo
+Invoke-Dotnet run --project tests/WallBili.Desktop.Tests -c Release --no-build -- -result-xml work/desktop-tests.xml -nologo
