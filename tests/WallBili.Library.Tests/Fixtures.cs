@@ -11,10 +11,10 @@ internal sealed class LibraryFixture : IAsyncDisposable
     public TestPlayer Player { get; } = new();
     public SqliteLibraryStore Store { get; }
     public LibrarySession Session { get; }
-    public LibraryFixture(TimeProvider? time = null)
+    public LibraryFixture(TimeProvider? time = null, MediaSelectionPreferences? selection = null)
     {
         Store = new(DatabasePath);
-        Session = new(Content, Store, Player, time);
+        Session = new(Content, Store, Player, time, selection);
     }
     public async Task SeedAsync()
     {
@@ -42,6 +42,8 @@ internal sealed class TestContent : IContentClient
     public HashSet<ContentKey> MediaFailures { get; } = [];
     public Dictionary<ContentKey, ContentFailureKind> ResolveFailures { get; } = [];
     public List<ContentKey> Resolved { get; } = [];
+    public List<MediaSelectionPreferences> Selections { get; } = [];
+    public Func<ContentKey, MediaSelectionPreferences, MediaSession>? CustomResolve { get; set; }
     public Uri MediaUri { get; set; } = new("https://example.invalid/media?temporary-secret");
     public Dictionary<ContentKey, Uri> MediaUris { get; } = [];
     public bool RepeatedPage { get; set; }
@@ -50,9 +52,14 @@ internal sealed class TestContent : IContentClient
         if (MetadataFailures.TryGetValue(input, out var failure)) throw new ContentAccessException(failure, "Test metadata failure");
         return Task.FromResult(Videos[input]);
     }
-    public Task<MediaSession> ResolveMediaAsync(ContentKey key, CancellationToken cancellationToken = default)
+    public Task<MediaSession> ResolveMediaAsync(ContentKey key, CancellationToken cancellationToken = default) =>
+        ResolveMediaAsync(key, MediaSelectionPreferences.Automatic, cancellationToken);
+    public Task<MediaSession> ResolveMediaAsync(ContentKey key, MediaSelectionPreferences preferences,
+        CancellationToken cancellationToken = default)
     {
         Resolved.Add(key);
+        Selections.Add(preferences);
+        if (CustomResolve is { } resolve) return Task.FromResult(resolve(key, preferences));
         if (ResolveFailures.TryGetValue(key, out var failure)) throw new ContentAccessException(failure, "Test resolve failure");
         if (MediaFailures.Contains(key)) throw new ContentAccessException(ContentFailureKind.Removed, "Test missing content");
         return Task.FromResult(new MediaSession(key, new(MediaUris.GetValueOrDefault(key, MediaUri), "h264", 16), null,
@@ -74,17 +81,22 @@ internal sealed class TestContent : IContentClient
 internal sealed class TestPlayer : IQueuePlayer
 {
     public event EventHandler<QueuePlaybackEnded>? Ended;
-    public List<(ContentKey Key, Guid Generation, TimeSpan Position, bool Paused, double Volume)> Loads { get; } = [];
+    public List<(ContentKey Key, Guid Generation, TimeSpan Position, bool Paused, double Volume, MediaSession Session)> Loads { get; } = [];
     public TimeSpan? Position { get; set; }
     public bool Paused { get; private set; }
     public bool FailLoad { get; set; }
+    public int FailLoadsRemaining { get; set; }
     public bool EndDuringNextLoad { get; set; }
     public Guid Generation => Loads[^1].Generation;
     public Task LoadAsync(MediaSession session, Guid playbackId, TimeSpan position, bool paused, double volume,
         CancellationToken cancellationToken = default)
     {
-        if (FailLoad) throw new InvalidOperationException("Player unavailable");
-        Loads.Add((session.Content, playbackId, position, paused, volume));
+        if (FailLoad || FailLoadsRemaining > 0)
+        {
+            if (FailLoadsRemaining > 0) FailLoadsRemaining--;
+            throw new InvalidOperationException("Player unavailable");
+        }
+        Loads.Add((session.Content, playbackId, position, paused, volume, session));
         Position = position; Paused = paused;
         if (EndDuringNextLoad) { EndDuringNextLoad = false; End(); }
         return Task.CompletedTask;

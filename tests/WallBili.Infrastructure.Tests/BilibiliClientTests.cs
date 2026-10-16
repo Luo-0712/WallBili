@@ -51,7 +51,7 @@ public sealed class BilibiliClientTests
     }
 
     [Fact]
-    public async Task ResolvesAnonymousDashWithSignedParametersAndSeparateAudio()
+    public async Task ResolvesDashWithSignedParametersAndAutomaticHighestTier()
     {
         using var handler = new StubHttpHandler(request => request.RequestUri!.AbsolutePath switch
         {
@@ -61,13 +61,18 @@ public sealed class BilibiliClientTests
         });
         using var http = new HttpClient(handler);
 
-        var media = await new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 202), cancellationToken: TestContext.Current.CancellationToken);
+        // Automatic mode picks the highest tier actually returned, without an artificial 1080P cap.
+        var media = await new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 202), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(new ContentKey(Bvid, 202), media.Content);
-        Assert.Equal("https://media.example/video-first?deadline=2000000000", media.Video.Url.AbsoluteUri);
+        Assert.Equal("https://media.example/video-4k-first", media.Video.Url.AbsoluteUri);
         Assert.StartsWith("avc1", media.Video.Codec);
-        Assert.Equal(80, media.Video.Quality);
+        Assert.Equal(120, media.Video.Quality);
         Assert.Equal("https://media.example/audio-high-first?deadline=2000000000", media.Audio!.Url.AbsoluteUri);
+        Assert.Equal("4K 超清（AVC）", media.Selection!.SelectedVideo);
+        Assert.Equal("192 kbps（AAC）", media.Selection.SelectedAudio);
+        Assert.Equal(new[] { "120", "80", "64" }, media.Selection.VideoOptions.Select(o => o.Id).ToArray());
+        Assert.Equal(new[] { "30280", "30216" }, media.Selection.AudioOptions.Select(o => o.Id).ToArray());
         Assert.Contains(media.Headers, pair => pair.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase)
             && pair.Value.Contains("bilibili.com", StringComparison.Ordinal));
         Assert.Contains(media.Headers, pair => pair.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)
@@ -76,8 +81,8 @@ public sealed class BilibiliClientTests
         var query = StubHttpHandler.Query(Assert.Single(handler.Requests, uri => uri.AbsolutePath == "/x/player/wbi/playurl"));
         Assert.Equal(Bvid, query["bvid"]);
         Assert.Equal("202", query["cid"]);
-        Assert.Equal("80", query["qn"]);
-        Assert.Equal("16", query["fnval"]);
+        Assert.DoesNotContain("qn", query.Keys); // No fixed quality cap is requested anymore.
+        Assert.Equal("4048", query["fnval"]);
         Assert.Equal("0", query["fnver"]);
         Assert.Equal("1", query["fourk"]);
         Assert.Equal("pc", query["platform"]);
@@ -102,7 +107,7 @@ public sealed class BilibiliClientTests
             _ => throw new InvalidOperationException($"Unexpected request: {request.RequestUri!.AbsolutePath}")
         });
         using var http = new HttpClient(handler);
-        var client = new BilibiliClient(http, new() { PreferProgressiveMp4 = false });
+        var client = new BilibiliClient(http);
 
         var first = await client.ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken);
         var retry = await client.ResolveMediaAsync(first.Content, cancellationToken: TestContext.Current.CancellationToken);
@@ -126,7 +131,7 @@ public sealed class BilibiliClientTests
         using var http = new HttpClient(handler);
 
         var failure = await Assert.ThrowsAsync<ContentAccessException>(() =>
-            new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
+            new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(expected, failure.Kind);
         Assert.Equal(code, failure.ServiceCode);
@@ -143,7 +148,7 @@ public sealed class BilibiliClientTests
         using var http = new HttpClient(handler);
 
         var failure = await Assert.ThrowsAsync<ContentAccessException>(() =>
-            new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
+            new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(expected, failure.Kind);
     }
@@ -155,7 +160,7 @@ public sealed class BilibiliClientTests
         using var http = new HttpClient(handler);
 
         var failure = await Assert.ThrowsAsync<ContentAccessException>(() =>
-            new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
+            new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(ContentFailureKind.Network, failure.Kind);
         Assert.DoesNotContain("do-not-log", failure.ToString());
@@ -168,7 +173,7 @@ public sealed class BilibiliClientTests
         using var http = new HttpClient(handler);
 
         var failure = await Assert.ThrowsAsync<ContentAccessException>(() =>
-            new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
+            new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(ContentFailureKind.InvalidResponse, failure.Kind);
     }
@@ -182,7 +187,7 @@ public sealed class BilibiliClientTests
         cancelled.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 101), cancelled.Token));
+            new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancelled.Token));
     }
 
     [Theory]
@@ -196,30 +201,46 @@ public sealed class BilibiliClientTests
         using var http = new HttpClient(handler);
 
         var failure = await Assert.ThrowsAsync<ContentAccessException>(() =>
-            new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
+            new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(ContentFailureKind.AuthenticationRequired, failure.Kind);
     }
 
-    [Theory]
-    [InlineData("mp4a.40.2", "mp4a.40.2")]
-    [InlineData("avc1.640028", "avc1.640028")]
-    [InlineData("unknown-codec", "mp4a.40.2")]
-    public async Task RejectsDashTrackRolesThatCannotFormVideoAndAudioPair(string videoCodec, string audioCodec)
+    [Fact]
+    public async Task RejectsDashWithoutVideoStream()
     {
         using var handler = new StubHttpHandler(request => request.RequestUri!.AbsolutePath == "/x/web-interface/nav"
             ? StubHttpHandler.Json(Nav)
-            : StubHttpHandler.Json($$$$"""
+            : StubHttpHandler.Json("""
                 {"code":0,"data":{"dash":{
-                  "video":[{"id":80,"baseUrl":"https://media.example/video","codecs":"{{{{videoCodec}}}}","height":1080}],
-                  "audio":[{"id":30280,"baseUrl":"https://media.example/audio","codecs":"{{{{audioCodec}}}}"}]}}}
+                  "video":[{"id":80,"baseUrl":"https://media.example/video","codecs":"unknown-codec","height":1080}],
+                  "audio":[{"id":30280,"baseUrl":"https://media.example/audio","codecs":"mp4a.40.2"}]}}}
                 """));
         using var http = new HttpClient(handler);
 
         var failure = await Assert.ThrowsAsync<ContentAccessException>(() =>
-            new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
+            new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(ContentFailureKind.Unsupported, failure.Kind);
+    }
+
+    [Fact]
+    public async Task AcceptsVideoOnlyDashWhenNoAudioStreamIsReturned()
+    {
+        using var handler = new StubHttpHandler(request => request.RequestUri!.AbsolutePath == "/x/web-interface/nav"
+            ? StubHttpHandler.Json(Nav)
+            : StubHttpHandler.Json("""
+                {"code":0,"data":{"dash":{
+                  "video":[{"id":80,"baseUrl":"https://media.example/video","codecs":"avc1.640028","width":1920,"height":1080,"bandwidth":4000000}]}}}
+                """));
+        using var http = new HttpClient(handler);
+
+        var media = await new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Null(media.Audio);
+        Assert.True(media.Selection!.NoAudio);
+        Assert.Equal("无音轨", media.Selection.SelectedAudio);
+        Assert.Empty(media.Selection.AudioOptions);
     }
 
     [Fact]
@@ -228,14 +249,20 @@ public sealed class BilibiliClientTests
         using var handler = new StubHttpHandler(request => request.RequestUri!.AbsolutePath == "/x/web-interface/nav"
             ? StubHttpHandler.Json(Nav)
             : StubHttpHandler.Json("""
-                {"code":0,"data":{"quality":64,"format":"mp4","durl":[{"url":"https://media.example/combined.mp4"}]}}
+                {"code":0,"data":{"quality":64,"format":"mp4","support_formats":[{"quality":64,"new_desc":"720P 高清"}],
+                  "durl":[{"url":"https://media.example/combined.mp4"}]}}
                 """));
         using var http = new HttpClient(handler);
 
-        var media = await new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken);
+        var media = await new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("https://media.example/combined.mp4", media.Video.Url.AbsoluteUri);
         Assert.Null(media.Audio);
+        Assert.True(media.Selection!.EmbeddedAudio);
+        Assert.Equal("720P 高清", media.Selection.SelectedVideo);
+        Assert.Equal("内嵌音轨，不可单独选择", media.Selection.SelectedAudio);
+        Assert.Single(media.Selection.VideoOptions); // Only the actually provided quality is listed.
+        Assert.Empty(media.Selection.AudioOptions);
     }
 
     [Fact]
@@ -246,7 +273,7 @@ public sealed class BilibiliClientTests
             : StubHttpHandler.Json(Dash("private-token")));
         using var http = new HttpClient(handler);
 
-        var media = await new BilibiliClient(http, new() { PreferProgressiveMp4 = false }).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken);
+        var media = await new BilibiliClient(http).ResolveMediaAsync(new(Bvid, 101), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("private-token", media.ToString());
         Assert.DoesNotContain("media.example", media.ToString());
@@ -254,7 +281,9 @@ public sealed class BilibiliClientTests
     }
 
     private static string Dash(string suffix) => $$$$"""
-        {"code":0,"data":{"quality":80,"timelength":60000,"dash":{
+        {"code":0,"data":{"quality":120,"timelength":60000,"support_formats":[
+            {"quality":120,"new_desc":"4K 超清"},{"quality":80,"new_desc":"1080P 高清"},{"quality":64,"new_desc":"720P 高清"}],
+          "dash":{
           "video":[
             {"id":120,"baseUrl":"https://media.example/video-4k-{{{{suffix}}}}","codecs":"avc1.640033","width":3840,"height":2160,"bandwidth":8000000},
             {"id":80,"baseUrl":"https://media.example/video-hevc-{{{{suffix}}}}","codecs":"hev1.1.6.L120","width":1920,"height":1080,"bandwidth":2000000},

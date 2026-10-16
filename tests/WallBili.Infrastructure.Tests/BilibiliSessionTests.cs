@@ -32,9 +32,9 @@ public sealed class BilibiliSessionTests
         Assert.Single(handler.Requests, uri => uri.AbsolutePath == "/x/frontend/finger/spi");
         Assert.Single(handler.Requests, uri => uri.AbsolutePath == "/x/web-interface/nav");
         Assert.Equal(8, handler.Requests.Count(uri => uri.AbsolutePath == "/x/player/wbi/playurl"));
-        Assert.All(sessions, session => Assert.Null(session.Audio));
+        Assert.All(sessions, session => Assert.True(session.Selection!.EmbeddedAudio));
         Assert.All(handler.Requests.Where(uri => uri.AbsolutePath == "/x/player/wbi/playurl"),
-            uri => Assert.Equal("0", StubHttpHandler.Query(uri)["fnval"]));
+            uri => Assert.Equal("4048", StubHttpHandler.Query(uri)["fnval"]));
     }
 
     [Theory]
@@ -49,7 +49,7 @@ public sealed class BilibiliSessionTests
         using var http = new HttpClient(handler);
         var client = new BilibiliClient(http);
         if (succeedsAfterRefresh)
-            Assert.Null((await client.ResolveMediaAsync(new("BV17x411w7KC", 101), cancellationToken: TestContext.Current.CancellationToken)).Audio);
+            Assert.True((await client.ResolveMediaAsync(new("BV17x411w7KC", 101), cancellationToken: TestContext.Current.CancellationToken)).Selection!.EmbeddedAudio);
         else
             Assert.Equal(ContentFailureKind.Inaccessible,
                 (await Assert.ThrowsAsync<ContentAccessException>(() => client.ResolveMediaAsync(new("BV17x411w7KC", 101), cancellationToken: TestContext.Current.CancellationToken))).Kind);
@@ -59,17 +59,30 @@ public sealed class BilibiliSessionTests
     }
 
     [Fact]
-    public async Task FallsBackFromUnavailableProgressiveFormatToDashWithoutReinitializingVisitor()
+    public async Task AcceptsProgressiveMp4CompatPathWithoutExtraRequests()
+    {
+        using var handler = new StubHttpHandler(request => request.RequestUri!.AbsolutePath == "/x/web-interface/nav"
+            ? StubHttpHandler.Json(Nav) : StubHttpHandler.Json(Mp4));
+        using var http = new HttpClient(handler);
+        var session = await new BilibiliClient(http).ResolveMediaAsync(new("BV17x411w7KC", 101), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(session.Selection!.EmbeddedAudio);
+        Assert.Equal(1, handler.Requests.Count(uri => uri.AbsolutePath == "/x/player/wbi/playurl"));
+        Assert.Single(handler.Requests, uri => uri.AbsolutePath == "/x/web-interface/nav");
+    }
+
+    [Fact]
+    public async Task RejectsMultiSegmentProgressiveResponse()
     {
         using var handler = new StubHttpHandler(request => request.RequestUri!.AbsolutePath == "/x/web-interface/nav"
             ? StubHttpHandler.Json(Nav)
-            : StubHttpHandler.Json(StubHttpHandler.Query(request.RequestUri)["fnval"] == "0"
-                ? """{"code":0,"data":{"format":"flv","durl":[{},{}]}}""" : Dash));
+            : StubHttpHandler.Json("""{"code":0,"data":{"format":"flv","quality":16,"durl":[{},{}]}}"""));
         using var http = new HttpClient(handler);
-        var session = await new BilibiliClient(http).ResolveMediaAsync(new("BV17x411w7KC", 101), cancellationToken: TestContext.Current.CancellationToken);
-        Assert.NotNull(session.Audio);
-        Assert.Equal(2, handler.Requests.Count(uri => uri.AbsolutePath == "/x/player/wbi/playurl"));
-        Assert.Single(handler.Requests, uri => uri.AbsolutePath == "/x/web-interface/nav");
+
+        var failure = await Assert.ThrowsAsync<ContentAccessException>(() =>
+            new BilibiliClient(http).ResolveMediaAsync(new("BV17x411w7KC", 101), cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(ContentFailureKind.Unsupported, failure.Kind);
+        Assert.Equal(1, handler.Requests.Count(uri => uri.AbsolutePath == "/x/player/wbi/playurl")); // No format retry loops.
     }
 
     [Fact]
@@ -84,5 +97,16 @@ public sealed class BilibiliSessionTests
         Assert.Equal(ContentFailureKind.InvalidResponse, error.Kind);
         Assert.DoesNotContain("private-cookie", error.ToString());
         Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task AutomaticAudioPicksHighestNormalTier()
+    {
+        using var handler = new StubHttpHandler(request => request.RequestUri!.AbsolutePath == "/x/web-interface/nav"
+            ? StubHttpHandler.Json(Nav) : StubHttpHandler.Json(Dash));
+        using var http = new HttpClient(handler);
+        var session = await new BilibiliClient(http).ResolveMediaAsync(new("BV17x411w7KC", 101), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal("https://media.example/audio", session.Audio!.Url.AbsoluteUri);
+        Assert.False(session.Selection!.NoAudio);
     }
 }
