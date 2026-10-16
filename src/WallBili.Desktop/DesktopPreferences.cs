@@ -10,6 +10,10 @@ internal sealed record DesktopPreferences
     public string? DisplayId { get; init; }
     public bool FillWindow { get; init; } = true;
     public bool ContinueAudioWhenHidden { get; init; } = true;
+    /// <summary>Preferred video quality tier id; null keeps automatic mode. Old preference files without
+    /// these properties deserialize with null and keep working.</summary>
+    public string? PreferredVideoQualityId { get; init; }
+    public string? PreferredAudioQualityId { get; init; }
 
     public static DesktopPreferences Read(string path)
     {

@@ -9,6 +9,9 @@ The Windows framework-dependent debug package includes:
 | Microsoft.Data.Sqlite / Microsoft.Data.Sqlite.Core | 10.0.13 | MIT, copyright .NET Foundation and Contributors; [upstream](https://github.com/dotnet/efcore), full text in `licenses/Microsoft.Data.Sqlite-LICENSE.txt` |
 | SQLitePCLRaw core, provider.e_sqlite3, bundle_e_sqlite3 and lib.e_sqlite3 | 2.1.13 | NuGet packages declare Apache-2.0; [upstream](https://github.com/ericsink/SQLitePCL.raw), full text in `licenses/SQLitePCLRaw-LICENSE.txt` |
 | SQLite native engine inside e_sqlite3 | Supplied by SQLitePCLRaw.lib.e_sqlite3 2.1.13 | SQLite is [public domain](https://www.sqlite.org/copyright.html); build wrapper/package follows the notice above |
+| QRCoder | 1.8.1 | MIT; [upstream](https://github.com/codebude/QRCoder), full text in `licenses/QRCoder-LICENSE.txt` |
+
+The account credential file uses Windows DPAPI (`System.Security.Cryptography.ProtectedData`, MIT, copyright .NET Foundation and Contributors), which ships with the .NET Windows Desktop runtime and is not redistributed by WallBili.
 
 License texts were obtained from the corresponding upstream repositories. Exact NuGet dependency versions and content hashes are checked in as `packages.lock.json` files. No upstream library source was modified.
 

@@ -19,10 +19,13 @@ namespace WallBili.Desktop;
 
 public partial class MainWindow : Window
 {
-    private readonly HttpClient _http = new(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All })
+    private readonly HttpClient _http = new(new HttpClientHandler
+        { AutomaticDecompression = DecompressionMethods.All, UseCookies = false })
         { Timeout = TimeSpan.FromSeconds(30) };
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private readonly BilibiliClient _client;
+    private readonly AuthStore _authStore;
     private readonly LibrarySession _library;
     private readonly MpvQueuePlayer _player;
     private readonly DesktopVideoHost _host;
@@ -48,11 +51,16 @@ public partial class MainWindow : Window
         _outputHandle = _host.Handle.ToInt64();
         _player = new(() => new() { ExecutablePath = Volatile.Read(ref _mpvPath), WindowId = Volatile.Read(ref _outputHandle),
             FillWindow = _preferences.FillWindow });
-        _library = new(new BilibiliClient(_http), new SqliteLibraryStore(Path.Combine(directory, "library.db")), _player);
+        _client = new BilibiliClient(_http);
+        _client.AccountChanged += (_, _) => _ = Dispatcher.InvokeAsync(RenderAccount);
+        _authStore = new(Path.Combine(directory, "auth.dat"));
+        _library = new(_client, new SqliteLibraryStore(Path.Combine(directory, "library.db")), _player,
+            selection: ToSelection());
         _library.Changed += (_, _) => _ = Dispatcher.InvokeAsync(Render);
         _tray = new(Dispatcher, ShowControls, TogglePause, () => Next_Click(this, new()), ToggleWallpaper, RequestExit);
         RefreshSettings();
         RefreshDesktop();
+        RenderAccount();
         SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
         SystemEvents.PowerModeChanged += PowerModeChanged;
         NetworkChange.NetworkAvailabilityChanged += NetworkAvailabilityChanged;
@@ -70,12 +78,63 @@ public partial class MainWindow : Window
         if (Environment.GetCommandLineArgs().Contains("--background")) Hide();
         await RunAsync(async ct =>
         {
+            await RestoreAccountAsync(ct); // The stored session is restored before playback resumes.
             await _library.InitializeAsync(ct);
             if (!_host.Attached && !_preferences.ContinueAudioWhenHidden) await _library.PauseAsync(ct);
             _ready = true; VolumeSlider.Value = _library.Snapshot.Playback.Volume;
         }, initializing: true);
         if (_ready) VolumeSlider.Value = _library.Snapshot.Playback.Volume;
         _timer.Start();
+    }
+
+    /// <summary>Applies the DPAPI-stored credentials. Confirmed expired credentials are removed from disk;
+    /// temporary network errors keep the file so the next start can try again.</summary>
+    private async Task RestoreAccountAsync(CancellationToken ct)
+    {
+        var stored = _authStore.Load();
+        if (string.IsNullOrEmpty(stored)) return;
+        try { await _client.ImportCookiesAsync(stored, ct); }
+        catch (ContentAccessException ex) when (ex.Kind == ContentFailureKind.AuthenticationRequired)
+        { _authStore.Clear(); }
+    }
+
+    private void RenderAccount()
+    {
+        if (_closing) return;
+        var account = _client.CurrentAccount();
+        AccountText.Text = account is null ? "未登录"
+            : BilibiliCookieText.Describe(account) + (account.IsVip ? " · 大会员" : "");
+        LoginButton.Content = account is null ? "登录" : "退出登录";
+    }
+
+    private async void Login_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client.CurrentAccount() is not null)
+        {
+            // Leaving WallBili only: the all-site session stays valid for browsers and other devices.
+            _authStore.Clear();
+            await RunAsync(async ct =>
+            {
+                await _client.SignOutAsync();
+                await ReloadCurrentForAccountAsync(ct);
+            });
+            RenderAccount();
+            return;
+        }
+        var dialog = new LoginDialog(_client) { Owner = this };
+        dialog.ShowDialog();
+        if (dialog.CookieResult is not { } cookie) return;
+        _authStore.Save(cookie);
+        RenderAccount();
+        await RunAsync(ReloadCurrentForAccountAsync, "登录成功，正在刷新可用画质…");
+    }
+
+    /// <summary>After a login or logout the playing or paused current item is resolved again with the new
+    /// session; a stopped queue only keeps its settings, nothing starts playing by itself.</summary>
+    private async Task ReloadCurrentForAccountAsync(CancellationToken ct)
+    {
+        if (_library.Snapshot.Playback.Intent != PlaybackIntent.Stopped && _library.Snapshot.Current is not null)
+            await _library.ReloadAsync(ct);
     }
 
     private void RefreshSettings()
@@ -301,11 +360,70 @@ public partial class MainWindow : Window
             Progress.Value = Math.Clamp(position.TotalSeconds, 0, Progress.Maximum);
             ModeBox.SelectedIndex = snapshot.Playback.Mode == QueueMode.Sequential ? 0 : 1;
             StatusText.Text = snapshot.Notice;
+            RenderQuality(snapshot);
             _tray.SetStatus(snapshot.Current?.Title ?? intent);
             RefreshDesktop();
         }
         finally { _rendering = false; }
     }
+
+    /// <summary>Shows the offered tiers as selections and the actually playing quality separately, so a
+    /// fallback never leaves the interface claiming the target tier is playing.</summary>
+    private void RenderQuality(LibrarySnapshot snapshot)
+    {
+        var media = snapshot.Media;
+        var videoRows = new List<QualityRow> { new(null, "自动：最高可用") };
+        var audioRows = new List<QualityRow> { new(null, "自动：最高普通音质") };
+        if (media is not null)
+        {
+            videoRows.AddRange(media.VideoOptions.Select(o => new QualityRow(o.Id, o.Label)));
+            audioRows.AddRange(media.AudioOptions.Select(o => new QualityRow(o.Id, o.Label, o.Special)));
+        }
+        // A persisted preference may target a tier this video does not offer; keep it visible instead of hiding it.
+        if (_preferences.PreferredVideoQualityId is { } videoId && videoRows.All(r => r.Id != videoId))
+            videoRows.Add(new(videoId, $"已保存画质档位 {videoId}"));
+        if (_preferences.PreferredAudioQualityId is { } audioId && audioRows.All(r => r.Id != audioId))
+            audioRows.Add(new(audioId, $"已保存音质档位 {audioId}"));
+        VideoQualityBox.ItemsSource = videoRows;
+        VideoQualityBox.SelectedItem = videoRows.FirstOrDefault(r => r.Id == _preferences.PreferredVideoQualityId) ?? videoRows[0];
+        AudioQualityBox.ItemsSource = audioRows;
+        AudioQualityBox.SelectedItem = audioRows.FirstOrDefault(r => r.Id == _preferences.PreferredAudioQualityId) ?? audioRows[0];
+        var noAudio = media is { NoAudio: true };
+        AudioQualityBox.IsEnabled = !noAudio;
+        QualityStatusText.Text = media is null
+            ? snapshot.Current is null ? "" : "正在获取可用画质…"
+            : noAudio
+                ? $"实际播放：{media.SelectedVideo}；音轨：无音轨"
+                : media.EmbeddedAudio
+                    ? $"实际播放：{media.SelectedVideo}；音轨：内嵌（不可单独选择）"
+                    : $"实际播放：{media.SelectedVideo} / {media.SelectedAudio}" +
+                      (media.VideoFallback is { } v ? $"；{v}" : "") +
+                      (media.AudioFallback is { } a ? $"；{a}" : "");
+    }
+
+    private async void VideoQuality_Changed(object sender, SelectionChangedEventArgs e) => await ApplyQualityPreferenceAsync();
+    private async void AudioQuality_Changed(object sender, SelectionChangedEventArgs e) => await ApplyQualityPreferenceAsync();
+
+    /// <summary>Saves the global preference and switches the current stream when one is active. The combo
+    /// shows the preference; the actually playing quality and any fallback appear in the status text.</summary>
+    private async Task ApplyQualityPreferenceAsync()
+    {
+        if (_rendering || !_ready || _closing) return;
+        var selection = ToSelection();
+        if (selection == ToSelection(_preferences)) return;
+        var updated = _preferences with
+        {
+            PreferredVideoQualityId = selection.VideoQualityId,
+            PreferredAudioQualityId = selection.AudioQualityId
+        };
+        updated.Save(_preferencesPath);
+        _preferences = updated;
+        await RunAsync(ct => _library.SetMediaSelectionAsync(selection, ct));
+    }
+
+    private MediaSelectionPreferences ToSelection(DesktopPreferences? preferences = null) => new(
+        (VideoQualityBox?.SelectedItem as QualityRow)?.Id ?? preferences?.PreferredVideoQualityId,
+        (AudioQualityBox?.SelectedItem as QualityRow)?.Id ?? preferences?.PreferredAudioQualityId);
 
     private async Task RunAsync(Func<CancellationToken, Task> operation, string? notice = null, bool initializing = false)
     {
@@ -389,4 +507,5 @@ public partial class MainWindow : Window
     private sealed record SourceRow(string Id, string Title);
     private sealed record EntryRow(CatalogEntry Entry, string Status);
     private sealed record QueueRow(Guid Id, string Marker, string Title, string Status);
+    private sealed record QualityRow(string? Id, string Label, bool Special = false);
 }

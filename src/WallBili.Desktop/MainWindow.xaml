@@ -10,6 +10,8 @@
         </Grid.RowDefinitions>
         <DockPanel Margin="0,0,0,16">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <TextBlock x:Name="AccountText" Text="未登录" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="#536170"/>
+                <Button x:Name="LoginButton" Content="登录" Click="Login_Click" Margin="0,0,8,0"/>
                 <Button Content="收起到托盘" Click="Hide_Click"/><Button Content="退出" Click="Exit_Click"/>
             </StackPanel>
             <TextBlock Text="WallBili" FontSize="28" FontWeight="SemiBold" Foreground="#17212D"/>
@@ -95,6 +97,16 @@
                     <ComboBox x:Name="ModeBox" Width="100" SelectedIndex="0" SelectionChanged="Mode_Changed" VerticalContentAlignment="Center">
                         <ComboBoxItem Content="顺序播放"/><ComboBoxItem Content="列表循环"/>
                     </ComboBox>
+                </WrapPanel>
+                <WrapPanel Margin="0,0,0,10">
+                    <TextBlock Text="画质" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox x:Name="VideoQualityBox" Width="170" DisplayMemberPath="Label"
+                              SelectionChanged="VideoQuality_Changed" VerticalContentAlignment="Center" ToolTip="自动模式选择最高可用画质；手动选择会保存为全局偏好"/>
+                    <TextBlock Text="音质" VerticalAlignment="Center" Margin="14,0,8,0"/>
+                    <ComboBox x:Name="AudioQualityBox" Width="170" DisplayMemberPath="Label"
+                              SelectionChanged="AudioQuality_Changed" VerticalContentAlignment="Center" ToolTip="自动模式选择最高普通音质；无损和杜比需手动选择"/>
+                    <TextBlock x:Name="QualityStatusText" Text="" VerticalAlignment="Center" Foreground="#536170"
+                               Margin="14,0,0,0" TextWrapping="Wrap"/>
                 </WrapPanel>
                 <WrapPanel Margin="0,0,0,10">
                     <TextBlock Text="跳转（秒）" VerticalAlignment="Center" Margin="0,0,8,0"/>

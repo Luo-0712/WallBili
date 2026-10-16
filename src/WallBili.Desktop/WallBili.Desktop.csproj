@@ -12,6 +12,8 @@
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
+    <InternalsVisibleTo Include="WallBili.Desktop.Tests" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
     <ProjectReference Include="../WallBili.Core/WallBili.Core.csproj" />
     <ProjectReference Include="../WallBili.Infrastructure/WallBili.Infrastructure.csproj" />
     <ProjectReference Include="../WallBili.Player.Mpv/WallBili.Player.Mpv.csproj" />
