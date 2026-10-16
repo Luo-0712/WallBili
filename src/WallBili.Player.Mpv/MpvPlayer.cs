@@ -423,9 +423,10 @@ public sealed class MpvPlayer : IAsyncDisposable
     private async Task CleanupAsync()
     {
         _readerCancellation?.Cancel();
-        _writer?.Dispose();
+        try { _writer?.Dispose(); } catch (IOException) { } catch (ObjectDisposedException) { }
         _writer = null;
-        if (_connection is not null) await _connection.DisposeAsync().ConfigureAwait(false);
+        if (_connection is not null)
+            try { await _connection.DisposeAsync().ConfigureAwait(false); } catch (IOException) { } catch (ObjectDisposedException) { }
         _connection = null;
         if (_readerTask is not null)
             try { await _readerTask.ConfigureAwait(false); } catch { }
