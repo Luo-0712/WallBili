@@ -5,6 +5,7 @@
 ## 实现
 
 - WPF 内的 `DesktopVideoHost` 在既有 Explorer 壁纸 WorkerW 下承载 WallBili 自己的 HWND，直接把它交给同一个 mpv 的 `--wid`。填充/适应通过 IPC `panscan` 切换，不启动独立音频进程。
+- 壁纸宿主查找同时支持两种 Shell 布局：优先沿用经典的「图标窗口之后的顶层 WorkerW」，找不到时再看「同一父窗口内排在 `SHELLDLL_DefView` 之后的 WorkerW 兄弟」。两条路径都向后遍历候选而不是只取紧邻的一个，并统一要求候选由 explorer 拥有、且自身不含 `SHELLDLL_DefView`。
 - 选择一块显示器，以设备 ID 保存；坐标映射包含负坐标，应用采用 PerMonitorV2。所选屏幕离线时暂用主屏，返回后重新选择原设备。每五秒检查宿主，显示变化事件触发即时检查。
 - 画面状态、播放意图和临时恢复状态分开：关闭画面可继续音乐，或自动暂停；停止不丢队列且取消重试。闲置/等待恢复时隐藏宿主，不以黑色空窗覆盖原壁纸。
 - Explorer 窗口变化时只重新附着自己的子窗口；HWND 被销毁后重建宿主，并串行释放旧播放器再按当前身份/检查点恢复，避免新旧音频进程重叠。
@@ -32,6 +33,32 @@
 | 两小时稳定性、GPU、音画误差、登录到播放实测秒数 | 尚未测量，未宣称达到目标 |
 
 共 88 项测试通过，零失败、零跳过。构建初期 NuGet 审计源曾不可达而产生 NU1900；恢复网络访问后使用 `--no-http-cache --locked-mode` 刷新恢复，最终构建已无告警。实测日志：`work/phase3-verification.log`、`work/content-tests.xml`、`work/player-tests.xml`、`work/library-tests.xml`。临时日志与测试媒体不提交 Git。
+
+## 壁纸宿主查找修正（2026-10-16 实机）
+
+首次 Windows 实机运行发现宿主始终找不到，`DesktopStatus` 停在「等待可用的 Explorer 壁纸层，自动重试」。基线 `cf3ce2d`，分支 `fix/wallpaper-host-lookup`。
+
+实机窗口结构（Windows 11 build 26200，Wallpaper Engine 同时运行）：
+
+```
+Progman (explorer, 可见, 2560×1440)
+├── SHELLDLL_DefView        桌面图标层
+└── WorkerW                 壁纸宿主 264228
+    └── WPEVideoWallpaper   wallpaper64
+```
+
+原谓词只枚举顶层窗口；本机 584 个顶层窗口中 11 个 `WorkerW` 的 Z 序索引为 157–265，而 `Progman` 在 400，`FindWindowEx(NULL, Progman, "WorkerW", NULL)` 恒为 NULL。宿主实际是 `Progman` 的子窗口，取 `FindWindowEx(Progman, SHELLDLL_DefView, "WorkerW", NULL)` 唯一命中。修正后状态变为「桌面已就绪 · \\.\DISPLAY1 · 2560×1440 · 主屏」。
+
+| 检查 | 结果 |
+|---|---|
+| 全解决方案构建与 88 项测试 | 已通过；零警告零错误，零失败零跳过 |
+| 宿主挂载 | 已通过；视频层窗口的父窗口为宿主 WorkerW，尺寸等于整块显示器，无视频时保持隐藏；再次点击「应用桌面设置」后 mpv PID 不变 |
+| 播放与停止 | 已通过；播放时 Status 转「桌面画面 · …」，停止后视频层立即隐藏、原壁纸恢复 |
+| 像素级目视与图标交互 | 未做；当时桌面被全屏应用覆盖，`PrintWindow` 取不到 GPU 合成画面内容 |
+| Wallpaper Engine 共存层叠 | 仅结构：同一 WorkerW 下子 Z 序为 WallBili 在前、`WPEVideoWallpaper` 在后；图标层在视频层之上 |
+| Progman 子 WorkerW 布局的成因 | 未判定；需在 Wallpaper Engine 停止时重新采样，才能区分是 Explorer 原生还是 WE 造成 |
+
+其余实机项仍按 [Windows 阶段三检查表](windows-phase3-checklist.md) 逐行记录，未测项保持 `待测`。
 
 ## 后端边界与实机验收
 
