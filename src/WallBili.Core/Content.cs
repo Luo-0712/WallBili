@@ -18,7 +18,8 @@ public sealed record MediaTrack(Uri Url, string Codec, int Quality, int Width = 
 }
 
 public sealed record MediaSession(ContentKey Content, MediaTrack Video, MediaTrack? Audio,
-    IReadOnlyDictionary<string, string> Headers, DateTimeOffset ResolvedAt, DateTimeOffset? ExpiresAt)
+    IReadOnlyDictionary<string, string> Headers, DateTimeOffset ResolvedAt, DateTimeOffset? ExpiresAt,
+    MediaSelectionSummary? Selection = null)
 {
     public override string ToString() => $"{Content} video=({Video}) audio=({Audio}) resolved={ResolvedAt:O}";
 }
@@ -40,6 +41,12 @@ public interface IContentClient
 {
     Task<VideoInfo> GetVideoAsync(string input, CancellationToken cancellationToken = default);
     Task<MediaSession> ResolveMediaAsync(ContentKey key, CancellationToken cancellationToken = default);
+
+    /// <summary>Resolves media honouring an explicit quality preference. Default implementations
+    /// fall back to the automatic selection of the two-argument overload.</summary>
+    Task<MediaSession> ResolveMediaAsync(ContentKey key, MediaSelectionPreferences preferences,
+        CancellationToken cancellationToken = default) => ResolveMediaAsync(key, cancellationToken);
+
     Task<CollectionPage> GetCollectionPageAsync(CollectionSource source, int page = 1, int pageSize = 30,
         CancellationToken cancellationToken = default);
 }

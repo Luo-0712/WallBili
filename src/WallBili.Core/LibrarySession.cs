@@ -19,11 +19,15 @@ public sealed class LibrarySession : IAsyncDisposable
     private bool _initialized;
     private string _notice = "就绪";
     private LibrarySnapshot _snapshot = new([], [], [], new(), "就绪");
+    private MediaSelectionPreferences _selection = MediaSelectionPreferences.Automatic;
+    private MediaSelectionSummary? _media;
 
-    public LibrarySession(IContentClient content, ILibraryStore store, IQueuePlayer player, TimeProvider? time = null)
+    public LibrarySession(IContentClient content, ILibraryStore store, IQueuePlayer player,
+        TimeProvider? time = null, MediaSelectionPreferences? selection = null)
     {
         _content = content; _store = store; _player = player;
         _time = time ?? TimeProvider.System;
+        _selection = selection ?? MediaSelectionPreferences.Automatic;
         _player.Ended += Player_Ended;
     }
 
@@ -211,6 +215,73 @@ public sealed class LibrarySession : IAsyncDisposable
     public Task SetVideoFitAsync(bool fill, CancellationToken token = default) =>
         ExecuteAsync(ct => _player.SetVideoFitAsync(fill, ct), token);
 
+    /// <summary>Stores the quality preference and, while an item is playing or paused, switches its stream
+    /// in place. Stopped sessions only persist the preference; nothing starts playing.</summary>
+    public Task SetMediaSelectionAsync(MediaSelectionPreferences selection, CancellationToken token = default) =>
+        ExecuteAsync(async ct =>
+        {
+            var previous = _selection;
+            _selection = selection;
+            var index = CurrentIndex();
+            if (index < 0 || _state.Playback.Intent == PlaybackIntent.Stopped)
+            {
+                _notice = "已保存画质与音质偏好";
+                return;
+            }
+            await SwitchCurrentMediaAsync(_state.Queue[index], previous, ct);
+        }, token);
+
+    /// <summary>Quality switch: resolve the new stream first, then capture the position and replace playback.
+    /// The queue is never advanced and no completion is recorded; a failed resolution keeps the old playback.
+    /// A failed load attempts the previous selection once; if that also fails the item is paused in place.</summary>
+    private async Task SwitchCurrentMediaAsync(QueueItem item, MediaSelectionPreferences previous, CancellationToken ct)
+    {
+        _recoveryPending = false; _retryAttempt = 0;
+        var media = await _content.ResolveMediaAsync(item.Key, _selection, ct);
+        await CapturePositionAsync(ct);
+        var paused = _state.Playback.Intent == PlaybackIntent.Paused;
+        var entry = _state.Entries.First(e => e.Key == item.Key);
+        var position = TimeSpan.FromSeconds(Math.Max(0, _state.Playback.PositionSeconds));
+        if (entry.Duration > TimeSpan.Zero && position >= entry.Duration) position = TimeSpan.Zero;
+        var volume = _state.Playback.Volume;
+        var playbackId = Guid.NewGuid();
+        await StopPlayerAsync(ct);
+        try
+        {
+            _activePlayback = playbackId;
+            await _player.LoadAsync(media, playbackId, position, paused, volume, ct);
+            _state.Playback = _state.Playback with { PositionSeconds = position.TotalSeconds };
+            _media = media.Selection;
+            _lastPosition = position.TotalSeconds; _lastAdvance = _time.GetUtcNow();
+            _notice = paused ? "已切换画质与音质，保持暂停" : $"已切换画质与音质：{entry.Title}";
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            try { await StopPlayerAsync(CancellationToken.None); } catch { }
+            throw;
+        }
+        catch
+        {
+            // The new stream failed to load. Try the previous selection once; the preference itself is kept.
+            try
+            {
+                var restored = await _content.ResolveMediaAsync(item.Key, previous, ct);
+                var restoreId = Guid.NewGuid();
+                _activePlayback = restoreId;
+                await _player.LoadAsync(restored, restoreId, position, paused, volume, ct);
+                _media = restored.Selection;
+                _lastPosition = position.TotalSeconds; _lastAdvance = _time.GetUtcNow();
+                _notice = "新画质加载失败，已恢复原画质继续播放";
+            }
+            catch
+            {
+                try { await StopPlayerAsync(CancellationToken.None); } catch { }
+                _state.Playback = _state.Playback with { Intent = PlaybackIntent.Paused, PositionSeconds = position.TotalSeconds };
+                _notice = "新画质加载失败且无法恢复，已暂停并保留进度";
+            }
+        }
+    }
+
     public Task SeekAsync(TimeSpan position, CancellationToken token = default) => ExecuteAsync(async ct =>
     {
         if (position < TimeSpan.Zero || (_snapshot.Current is { Duration: var duration } && duration > TimeSpan.Zero && position > duration))
@@ -313,13 +384,14 @@ public sealed class LibrarySession : IAsyncDisposable
                 {
                     if (_suspended) return;
                     _activePlayback = playbackId;
-                    var media = await _content.ResolveMediaAsync(item.Key, ct);
+                    var media = await _content.ResolveMediaAsync(item.Key, _selection, ct);
                     // Checkpoint intent before starting: an interrupted load is safe to retry after restart.
                     await _store.SaveAsync(_state, ct);
                     var position = TimeSpan.FromSeconds(Math.Max(0, seconds));
                     if (entry.Duration > TimeSpan.Zero && position >= entry.Duration) position = TimeSpan.Zero;
                     await _player.LoadAsync(media, playbackId, position, paused, _state.Playback.Volume, ct);
                     _state.Playback = _state.Playback with { PositionSeconds = position.TotalSeconds };
+                    _media = media.Selection;
                     SetAvailability(item.Key, EntryAvailability.Available, null);
                     _retryAttempt = 0; _lastPosition = position.TotalSeconds; _lastAdvance = _time.GetUtcNow();
                     _notice = $"{(paused ? "已恢复并暂停" : "正在播放")}：{entry.Title}";
@@ -330,6 +402,15 @@ public sealed class LibrarySession : IAsyncDisposable
                     if (ex.Kind is ContentFailureKind.Network or ContentFailureKind.RateLimited)
                     {
                         await ScheduleRecoveryAsync("网络暂不可用", ct);
+                        return;
+                    }
+                    if (ex.Kind == ContentFailureKind.AuthenticationRequired)
+                    {
+                        // Sign-in or entitlement is required: pause this item and keep its position.
+                        // The entry is not marked invalid and the queue is not advanced further.
+                        await StopPlayerAsync(ct);
+                        _state.Playback = _state.Playback with { Intent = PlaybackIntent.Paused };
+                        _notice = "该内容需要登录或相应权益；已暂停并保留进度，登录后可继续";
                         return;
                     }
                     SetAvailability(item.Key, EntryAvailability.Failed, ex.Kind.ToString());
@@ -448,7 +529,7 @@ public sealed class LibrarySession : IAsyncDisposable
         {
             Volatile.Write(ref _snapshot, new(_state.Entries.ToArray(), _state.Sources.ToArray(),
                 _state.Queue.ToArray(), _state.Playback, _notice, _recoveryPending, _recoveryPending ? _retryAt : null,
-                _activePlayback is not null && !_recoveryPending));
+                _activePlayback is not null && !_recoveryPending, _media));
             _gate.Release();
             Changed?.Invoke(this, EventArgs.Empty);
         }

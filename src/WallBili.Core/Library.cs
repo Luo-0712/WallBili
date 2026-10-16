@@ -27,7 +27,7 @@ public sealed class LibraryState
 
 public sealed record LibrarySnapshot(IReadOnlyList<CatalogEntry> Entries, IReadOnlyList<CatalogSource> Sources,
     IReadOnlyList<QueueItem> Queue, PlaybackState Playback, string Notice, bool RecoveryPending = false,
-    DateTimeOffset? NextRecoveryAt = null, bool OutputActive = false)
+    DateTimeOffset? NextRecoveryAt = null, bool OutputActive = false, MediaSelectionSummary? Media = null)
 {
     public CatalogEntry? Current => Queue.FirstOrDefault(q => q.Id == Playback.CurrentId) is { } item
         ? Entries.FirstOrDefault(e => e.Key == item.Key) : null;
