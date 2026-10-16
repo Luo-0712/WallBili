@@ -102,20 +102,36 @@ internal static class Program
         nint found = 0;
         Native.EnumWindows((window, _) =>
         {
-            if (Native.FindWindowEx(window, 0, "SHELLDLL_DefView", null) == 0) return true;
-            var worker = Native.FindWindowEx(0, window, "WorkerW", null);
-            if (worker == 0 || Native.FindWindowEx(worker, 0, "SHELLDLL_DefView", null) != 0) return true;
-            Native.GetWindowThreadProcessId(worker, out var pid);
-            try
-            {
-                using var process = Process.GetProcessById((int)pid);
-                if (!process.ProcessName.Equals("explorer", StringComparison.OrdinalIgnoreCase)) return true;
-            }
-            catch (ArgumentException) { return true; }
-            found = worker;
-            return false;
+            var defView = Native.FindWindowEx(window, 0, "SHELLDLL_DefView", null);
+            if (defView == 0 || !IsExplorer(window)) return true;
+            // Classic layout: the host is a top-level WorkerW after the window owning the icons.
+            found = NextWorkerHost(0, window);
+            // Windows 11 also nests it: a WorkerW sibling that follows SHELLDLL_DefView in the same parent.
+            if (found == 0) found = NextWorkerHost(window, defView);
+            return found == 0;
         }, 0);
         return found;
+    }
+
+    private static nint NextWorkerHost(nint parent, nint after)
+    {
+        // Keep looking past a WorkerW that only hosts the icons instead of giving up on it.
+        for (var candidate = Native.FindWindowEx(parent, after, "WorkerW", null); candidate != 0;
+            candidate = Native.FindWindowEx(parent, candidate, "WorkerW", null))
+            if (Native.FindWindowEx(candidate, 0, "SHELLDLL_DefView", null) == 0 && IsExplorer(candidate))
+                return candidate;
+        return 0;
+    }
+
+    private static bool IsExplorer(nint window)
+    {
+        Native.GetWindowThreadProcessId(window, out var pid);
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            return process.ProcessName.Equals("explorer", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException) { return false; }
     }
 
     private static nint WindowProc(nint window, uint message, nuint wParam, nint lParam)
