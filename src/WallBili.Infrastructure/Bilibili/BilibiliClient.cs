@@ -5,17 +5,31 @@ using WallBili.Core;
 
 namespace WallBili.Infrastructure.Bilibili;
 
-/// <summary>Anonymous native WBI adapter. Visitor credentials and signing material stay in this instance.</summary>
-public sealed class BilibiliClient(HttpClient httpClient, BilibiliClientOptions? options = null) : IContentClient
+/// <summary>Web WBI adapter with unified account/visitor session management. Credentials stay in this
+/// instance and are only sent to the Bilibili API endpoints that require them; CDN playback keeps using
+/// media addresses plus the published Referer and User-Agent.</summary>
+public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
 {
     private const string Api = "https://api.bilibili.com";
+    private const string Passport = "https://passport.bilibili.com";
     public const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
     private const string Referer = "https://www.bilibili.com/";
-    private readonly BilibiliClientOptions _options = options ?? new();
+    /// <summary>DASH plus every high-tier and special-audio flag (HDR/4K/8K, Dolby, Hi-Res lossless, AV1).</summary>
+    private const string DashFnval = "4048";
     private readonly SemaphoreSlim _sessionGate = new(1, 1);
+    private readonly object _accountGate = new();
     private string? _visitorCookies;
     private WbiMaterial? _wbi;
+    private string? _accountCookies;
+    private BilibiliAccount? _account;
+    private int _sessionVersion;
+    private string? _activeQrcodeKey;
     private sealed record WbiMaterial(string ImageUrl, string SubUrl, DateTimeOffset RefreshAt);
+
+    /// <summary>Notified after the account session is replaced, cleared, or expired.</summary>
+    public event EventHandler<BilibiliAccountChangedEventArgs>? AccountChanged;
+
+    public BilibiliAccount? CurrentAccount() { lock (_accountGate) return _account; }
 
     public async Task<VideoInfo> GetVideoAsync(string input, CancellationToken cancellationToken = default)
     {
@@ -47,50 +61,229 @@ public sealed class BilibiliClient(HttpClient httpClient, BilibiliClientOptions?
             parts.OrderBy(p => p.Page).ToArray());
     }
 
-    public async Task<MediaSession> ResolveMediaAsync(ContentKey key, CancellationToken cancellationToken = default)
+    public Task<MediaSession> ResolveMediaAsync(ContentKey key, CancellationToken cancellationToken = default) =>
+        ResolveMediaAsync(key, null, cancellationToken);
+
+    public async Task<MediaSession> ResolveMediaAsync(ContentKey key, MediaSelectionPreferences? selection,
+        CancellationToken cancellationToken = default)
     {
         if (key is null || !BilibiliInput.IsBvid(key.Bvid) || key.Cid < 1)
             throw new ContentAccessException(ContentFailureKind.InvalidInput, "A valid BVID and positive CID are required.");
+        selection ??= MediaSelectionPreferences.Automatic;
+        try
+        {
+            return await ResolvePlayUrlAsync(key, selection, cancellationToken);
+        }
+        catch (ContentAccessException ex)
+        {
+            if (ex.Kind != ContentFailureKind.AuthenticationRequired || CurrentAccount() is null)
+                throw;
+            // Only a confirmed expired account is cleared and retried once as a guest. Network timeouts,
+            // risk control, removed content and entitlement-gated previews never clear the session.
+            if (!await IsAccountSessionExpiredAsync(cancellationToken)) throw;
+            ClearAccount();
+            return await ResolvePlayUrlAsync(key, selection, cancellationToken);
+        }
+    }
+
+    private async Task<MediaSession> ResolvePlayUrlAsync(ContentKey key, MediaSelectionPreferences selection,
+        CancellationToken ct)
+    {
         var now = DateTimeOffset.UtcNow;
         var parameters = new Dictionary<string, string>
         {
             ["bvid"] = key.Bvid,
             ["cid"] = key.Cid.ToString(CultureInfo.InvariantCulture),
-            ["qn"] = "80", ["fnval"] = _options.PreferProgressiveMp4 ? "0" : "16",
-            ["fnver"] = "0", ["fourk"] = "1", ["platform"] = "pc"
+            ["fnval"] = DashFnval, ["fnver"] = "0", ["fourk"] = "1", ["platform"] = "pc"
         };
-        var result = await GetSignedDataAsync("/x/player/wbi/playurl", parameters, cancellationToken);
-        if (_options.PreferProgressiveMp4 && !IsProgressiveMp4(result) && Property(result, "dash").ValueKind != JsonValueKind.Object)
-        {
-            parameters["fnval"] = "16";
-            result = await GetSignedDataAsync("/x/player/wbi/playurl", parameters, cancellationToken);
-        }
+        var result = await GetSignedDataAsync("/x/player/wbi/playurl", parameters, ct);
         if (Property(result, "is_preview").ValueKind == JsonValueKind.True || Number(result, "is_preview") == 1)
             throw new ContentAccessException(ContentFailureKind.AuthenticationRequired, "Only a restricted preview is available; sign-in or content entitlement is required.");
         var dash = Property(result, "dash");
         if (dash.ValueKind == JsonValueKind.Object)
-        {
-            var video = ReadTracks(Property(dash, "video"))
-                .Where(t => !t.Codec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase) &&
-                    t.Height <= 1080 && t.Quality <= 80)
-                .OrderByDescending(t => t.Codec.StartsWith("avc", StringComparison.OrdinalIgnoreCase))
-                .ThenByDescending(t => t.Quality).ThenByDescending(t => t.Bandwidth).FirstOrDefault();
-            var audio = ReadTracks(Property(dash, "audio"))
-                .Where(t => t.Codec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(t => t.Bandwidth).FirstOrDefault();
-            if (video is null || audio is null)
-                throw new ContentAccessException(ContentFailureKind.Unsupported, "No complete DASH video and audio pair was available.");
-            return Session(key, video, audio, now);
-        }
+            return ResolveDash(key, result, dash, selection, now);
         // A single progressive MP4 contains both audio and video. Multi-segment FLV is outside phase one.
-        var progressive = Property(result, "durl");
         if (IsProgressiveMp4(result))
         {
-            var url = Text(progressive[0], "url");
+            var url = Text(Property(result, "durl")[0], "url");
             if (TryMediaUri(url, out var uri))
-                return Session(key, new(uri!, "mp4", Int(result, "quality")), null, now);
+            {
+                var labels = ReadQualityLabels(result);
+                var quality = Int(result, "quality");
+                var label = labels.GetValueOrDefault(quality) ?? $"画质 {quality.ToString(CultureInfo.InvariantCulture)}";
+                return Session(key, new(uri!, "mp4", quality), null, now, new MediaSelectionSummary(
+                    [new MediaQualityOption(quality.ToString(CultureInfo.InvariantCulture), label)],
+                    [], label, "内嵌音轨，不可单独选择", EmbeddedAudio: true));
+            }
         }
-        throw new ContentAccessException(ContentFailureKind.Unsupported, "The returned media format is not supported by the phase-one adapter.");
+        throw new ContentAccessException(ContentFailureKind.Unsupported, "The returned media format is not supported by this adapter.");
+    }
+
+    /// <summary>Builds the quality options from the streams actually returned by upstream. Declared tiers
+    /// without a stream are never listed; multiple codecs of one tier merge into a single option.</summary>
+    private static MediaSession ResolveDash(ContentKey key, JsonElement result, JsonElement dash,
+        MediaSelectionPreferences selection, DateTimeOffset now)
+    {
+        var videos = ReadTracks(Property(dash, "video")).ToList();
+        if (videos.Count == 0)
+            throw new ContentAccessException(ContentFailureKind.Unsupported, "No DASH video stream was available.");
+        var normalAudio = ReadTracks(Property(dash, "audio")).ToList();
+        var dolbyAudio = ReadTracks(Property(Property(dash, "dolby"), "audio")).ToList();
+        var flacAudio = ReadTracks(Property(Property(dash, "flac"), "audio")).ToList();
+        var labels = ReadQualityLabels(result);
+
+        // Video options are ordered by tier rank (the upstream quality code is monotonic with quality).
+        var videoGroups = videos.GroupBy(t => t.Quality).OrderByDescending(g => g.Key).ToList();
+        var videoOptions = videoGroups.Select(g => new MediaQualityOption(
+            g.Key.ToString(CultureInfo.InvariantCulture),
+            labels.GetValueOrDefault(g.Key) ?? $"{g.Max(t => t.Height)}p（档位 {g.Key.ToString(CultureInfo.InvariantCulture)}）")).ToArray();
+        var (videoTier, videoFallback) = SelectVideoTier(videoOptions, selection.VideoQualityId);
+        var video = videoGroups.First(g => g.Key.ToString(CultureInfo.InvariantCulture) == videoTier.Id)
+            .OrderBy(PickVideoCodecRank).ThenByDescending(t => t.Bandwidth).First();
+        var selectedVideo = $"{videoTier.Label}（{CodecShortName(video.Codec)}）";
+
+        var audioOptions = new List<MediaQualityOption>();
+        var normalGroups = normalAudio.GroupBy(t => t.Quality).OrderByDescending(g => g.Max(t => t.Bandwidth)).ToList();
+        foreach (var group in normalGroups)
+        {
+            var track = group.OrderByDescending(t => t.Bandwidth).First();
+            audioOptions.Add(new(group.Key.ToString(CultureInfo.InvariantCulture),
+                $"{DescribeBandwidth(track.Bandwidth)}（{CodecShortName(track.Codec)}）"));
+        }
+        // Special tiers appear only when upstream actually returned their streams.
+        if (dolbyAudio.Count > 0)
+            audioOptions.Add(new(DolbyQuality.ToString(CultureInfo.InvariantCulture), "杜比全景声", Special: true));
+        if (flacAudio.Count > 0)
+            audioOptions.Add(new(FlacQuality.ToString(CultureInfo.InvariantCulture), "Hi-Res 无损", Special: true));
+
+        MediaTrack? audio = null;
+        string? selectedAudio = null;
+        string? audioFallback = null;
+        if (normalAudio.Count == 0 && dolbyAudio.Count == 0 && flacAudio.Count == 0)
+            selectedAudio = "无音轨";
+        else
+        {
+            MediaTrack chosen;
+            if (selection.AudioQualityId is not { } preferred)
+                chosen = normalAudio.Count > 0
+                    ? normalAudio.OrderByDescending(t => t.Bandwidth).First()
+                    : SpecialAudio(dolbyAudio, flacAudio);
+            else if (preferred == DolbyQuality.ToString(CultureInfo.InvariantCulture) && dolbyAudio.Count > 0)
+                chosen = dolbyAudio.OrderByDescending(t => t.Bandwidth).First();
+            else if (preferred == FlacQuality.ToString(CultureInfo.InvariantCulture) && flacAudio.Count > 0)
+                chosen = flacAudio.OrderByDescending(t => t.Bandwidth).First();
+            else
+            {
+                var preferredIsSpecial = int.TryParse(preferred, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                    out var preferredId) && preferredId is DolbyQuality or FlacQuality;
+                if (preferredIsSpecial)
+                {
+                    if (normalGroups.Count > 0)
+                    {
+                        // A missing special tier falls back to the highest normal tier, not an id-based one.
+                        chosen = normalGroups[0].OrderByDescending(t => t.Bandwidth).First();
+                        audioFallback = "特殊音轨不可用，已回退至最高普通音质";
+                    }
+                    else chosen = SpecialAudio(dolbyAudio, flacAudio);
+                }
+                else chosen = SelectNormalAudio(normalGroups, preferred);
+            }
+            audio = chosen;
+            selectedAudio = chosen.Quality is DolbyQuality or FlacQuality
+                ? audioOptions.First(o => o.Id == chosen.Quality.ToString(CultureInfo.InvariantCulture)).Label
+                : $"{DescribeBandwidth(chosen.Bandwidth)}（{CodecShortName(chosen.Codec)}）";
+        }
+        return Session(key, video, audio, now, new MediaSelectionSummary(videoOptions, audioOptions,
+            selectedVideo, selectedAudio, videoFallback, audioFallback, NoAudio: audio is null));
+    }
+
+    private const int DolbyQuality = 30250;
+    private const int FlacQuality = 30251;
+
+    private static MediaTrack SpecialAudio(List<MediaTrack> dolby, List<MediaTrack> flac) =>
+        dolby.Count > 0 ? dolby.OrderByDescending(t => t.Bandwidth).First()
+            : flac.OrderByDescending(t => t.Bandwidth).First();
+
+    private static MediaTrack SelectNormalAudio(List<IGrouping<int, MediaTrack>> normalGroups, string preferredId)
+    {
+        // Normal audio tiers are monotonic: a missing tier falls back to the highest tier not above the target.
+        var exact = normalGroups.FirstOrDefault(g => g.Key.ToString(CultureInfo.InvariantCulture) == preferredId);
+        if (exact is not null) return exact.OrderByDescending(t => t.Bandwidth).First();
+        if (int.TryParse(preferredId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var target))
+        {
+            var lower = normalGroups.FirstOrDefault(g => g.Key <= target);
+            if (lower is not null) return lower.OrderByDescending(t => t.Bandwidth).First();
+        }
+        return normalGroups[^1].OrderByDescending(t => t.Bandwidth).First();
+    }
+
+    private static (MediaQualityOption Tier, string? Fallback) SelectVideoTier(MediaQualityOption[] ranked,
+        string? preferredId)
+    {
+        // ranked is ordered from the highest to the lowest available tier.
+        if (preferredId is null) return (ranked[0], null);
+        var exact = ranked.FirstOrDefault(o => o.Id == preferredId);
+        if (exact is not null) return (exact, null);
+        if (int.TryParse(preferredId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var target))
+        {
+            var lower = ranked.FirstOrDefault(o => int.Parse(o.Id, CultureInfo.InvariantCulture) <= target);
+            if (lower is not null) return (lower, $"目标画质不可用，已回退至{lower.Label}");
+        }
+        return (ranked[^1], $"目标画质不可用，已回退至{ranked[^1].Label}");
+    }
+
+    private static int PickVideoCodecRank(MediaTrack track) => track.Codec.ToLowerInvariant() switch
+    {
+        var c when c.StartsWith("avc") => 0,
+        var c when c.StartsWith("hev") || c.StartsWith("hvc") => 1,
+        var c when c.StartsWith("av01") => 2,
+        _ => 3
+    };
+
+    private static string CodecShortName(string codec) => codec.ToLowerInvariant() switch
+    {
+        var c when c.StartsWith("avc") => "AVC",
+        var c when c.StartsWith("hev") || c.StartsWith("hvc") => "HEVC",
+        var c when c.StartsWith("av01") => "AV1",
+        var c when c.StartsWith("mp4a") => "AAC",
+        var c when c.StartsWith("ec-3") => "杜比",
+        var c when c.StartsWith("flac") => "FLAC",
+        _ => codec
+    };
+
+    private static string DescribeBandwidth(int bandwidth) => bandwidth > 0
+        ? $"{Math.Max(1, (int)Math.Round(bandwidth / 1000.0))} kbps" : "未知码率";
+
+    /// <summary>Maps declared quality descriptions. support_formats wins; accept_quality/accept_description
+    /// is the fallback. Unknown ids are labelled from the stream parameters instead of being dropped.</summary>
+    private static Dictionary<int, string> ReadQualityLabels(JsonElement result)
+    {
+        var labels = new Dictionary<int, string>();
+        var formats = Property(result, "support_formats");
+        if (formats.ValueKind == JsonValueKind.Array)
+            foreach (var format in formats.EnumerateArray())
+            {
+                var quality = Int(format, "quality");
+                if (quality <= 0) continue;
+                var description = string.IsNullOrWhiteSpace(Text(format, "new_desc"))
+                    ? Text(format, "display_desc") : Text(format, "new_desc");
+                if (description.Length > 0) labels[quality] = description;
+            }
+        var qualities = Property(result, "accept_quality");
+        var descriptions = Property(result, "accept_description");
+        if (qualities.ValueKind == JsonValueKind.Array && descriptions.ValueKind == JsonValueKind.Array)
+        {
+            var qualityList = qualities.EnumerateArray().ToList();
+            var descriptionList = descriptions.EnumerateArray().ToList();
+            for (var i = 0; i < Math.Min(qualityList.Count, descriptionList.Count); i++)
+            {
+                if (!qualityList[i].TryGetInt32Safe(out var quality) || quality <= 0 ||
+                    labels.ContainsKey(quality) || descriptionList[i].ValueKind != JsonValueKind.String) continue;
+                var description = descriptionList[i].GetString() ?? "";
+                if (description.Length > 0) labels[quality] = description;
+            }
+        }
+        return labels;
     }
 
     public async Task<CollectionPage> GetCollectionPageAsync(CollectionSource source, int page = 1, int pageSize = 30,
@@ -127,6 +320,131 @@ public sealed class BilibiliClient(HttpClient httpClient, BilibiliClientOptions?
         return new(source, title, returnedPage, returnedSize, total, entries);
     }
 
+    /// <summary>Requests a fresh web QR challenge. Any previous challenge becomes superseded.</summary>
+    public async Task<QrLoginChallenge> CreateQrLoginAsync(CancellationToken cancellationToken = default)
+    {
+        var root = await GetJsonAsync(Passport + "/x/passport-login/web/qrcode/generate", cancellationToken);
+        var data = Data(root);
+        var url = Text(data, "url");
+        var key = Text(data, "qrcode_key");
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var login) || login.Scheme != "https" ||
+            key.Length is < 16 or > 128)
+            throw InvalidResponse("The QR login challenge was missing or invalid.");
+        lock (_accountGate) _activeQrcodeKey = key;
+        return new(login, key);
+    }
+
+    /// <summary>Polls a web QR challenge. A successful poll validates the candidate credentials through the
+    /// navigation endpoint before the session is replaced; late polls of superseded challenges are inert.</summary>
+    public async Task<QrLoginPoll> PollQrLoginAsync(string qrcodeKey, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(qrcodeKey))
+            throw new ContentAccessException(ContentFailureKind.InvalidInput, "A QR challenge key is required.");
+        lock (_accountGate)
+            if (_activeQrcodeKey != qrcodeKey)
+                return new(QrLoginState.Superseded);
+        var (root, setCookies) = await GetJsonWithCookiesAsync(
+            Passport + "/x/passport-login/web/qrcode/poll?qrcode_key=" + Uri.EscapeDataString(qrcodeKey),
+            cancellationToken);
+        if (Number(root, "code") != 0) throw ServiceFailure((int)Number(root, "code"));
+        var data = Data(root);
+        switch ((int)Number(data, "code"))
+        {
+            case 86101:
+                return new(QrLoginState.WaitingScan);
+            case 86090:
+                return new(QrLoginState.WaitingConfirm);
+            case 86038:
+                return new(QrLoginState.Expired);
+            case 0:
+                lock (_accountGate)
+                    if (_activeQrcodeKey != qrcodeKey)
+                        return new(QrLoginState.Superseded);
+                var cookieText = BilibiliCookieText.FromSetCookieValues(setCookies);
+                if (BilibiliCookieText.FindValue(cookieText, "SESSDATA") is null)
+                    throw InvalidResponse("The login response did not contain session credentials.");
+                var account = await GetAccountFromNavAsync(cookieText, cancellationToken);
+                ApplyAccount(account, cookieText);
+                return new(QrLoginState.Succeeded, cookieText, account);
+            default:
+                throw ServiceFailure((int)Number(data, "code"));
+        }
+    }
+
+    /// <summary>Validates candidate cookie text through the navigation endpoint and only then replaces the
+    /// current session. A failed validation or a temporary network error keeps the previous account.</summary>
+    public async Task<BilibiliAccount> ImportCookiesAsync(string cookieText, CancellationToken cancellationToken = default)
+    {
+        var normalized = BilibiliCookieText.Normalize(cookieText);
+        var account = await GetAccountFromNavAsync(normalized, cancellationToken);
+        ApplyAccount(account, normalized);
+        return account;
+    }
+
+    /// <summary>Leaves the WallBili account only; the all-site session stays valid on Bilibili.</summary>
+    public Task SignOutAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ClearAccount();
+        return Task.CompletedTask;
+    }
+
+    private async Task<BilibiliAccount> GetAccountFromNavAsync(string cookieText, CancellationToken ct)
+    {
+        var data = Data(await GetJsonAsync(Api + "/x/web-interface/nav", ct, cookieOverride: cookieText));
+        if (Number(data, "mid") <= 0 || Text(data, "uname").Length == 0 ||
+            (Property(data, "isLogin").ValueKind != JsonValueKind.True && Number(data, "isLogin") != 1))
+            throw new ContentAccessException(ContentFailureKind.AuthenticationRequired,
+                "The credentials were rejected or have expired.");
+        var vip = Number(data, "vipStatus") == 1 ||
+            (Property(data, "vip").ValueKind == JsonValueKind.Object && Number(Property(data, "vip"), "status") == 1);
+        return new(Number(data, "mid"), Text(data, "uname"), vip);
+    }
+
+    /// <summary>Confirms whether the account cookie is really expired. Network errors, risk control and
+    /// unreadable responses never count as an expired session.</summary>
+    private async Task<bool> IsAccountSessionExpiredAsync(CancellationToken ct)
+    {
+        string cookies;
+        lock (_accountGate) cookies = _accountCookies!;
+        try
+        {
+            var data = Data(await GetJsonAsync(Api + "/x/web-interface/nav", ct, cookieOverride: cookies));
+            return Property(data, "isLogin").ValueKind != JsonValueKind.True && Number(data, "isLogin") != 1;
+        }
+        catch (ContentAccessException ex)
+        {
+            return ex.Kind == ContentFailureKind.AuthenticationRequired;
+        }
+    }
+
+    private void ApplyAccount(BilibiliAccount account, string cookieText)
+    {
+        BilibiliAccountChangedEventArgs args;
+        lock (_accountGate)
+        {
+            _accountCookies = cookieText;
+            _account = account;
+            args = new(account, ++_sessionVersion);
+        }
+        _wbi = null; // Account changes invalidate account-related cached material.
+        AccountChanged?.Invoke(this, args);
+    }
+
+    private void ClearAccount()
+    {
+        BilibiliAccountChangedEventArgs args;
+        lock (_accountGate)
+        {
+            if (_accountCookies is null && _account is null) return;
+            _accountCookies = null;
+            _account = null;
+            args = new(null, ++_sessionVersion);
+        }
+        _wbi = null;
+        AccountChanged?.Invoke(this, args);
+    }
+
     private static IEnumerable<MediaTrack> ReadTracks(JsonElement array)
     {
         if (array.ValueKind != JsonValueKind.Array) yield break;
@@ -140,7 +458,9 @@ public sealed class BilibiliClient(HttpClient httpClient, BilibiliClientOptions?
                   codec.StartsWith("hev", StringComparison.OrdinalIgnoreCase) ||
                   codec.StartsWith("hvc", StringComparison.OrdinalIgnoreCase) ||
                   codec.StartsWith("av01", StringComparison.OrdinalIgnoreCase) ||
-                  codec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase))) continue;
+                  codec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase) ||
+                  codec.StartsWith("ec-3", StringComparison.OrdinalIgnoreCase) ||
+                  codec.StartsWith("flac", StringComparison.OrdinalIgnoreCase))) continue;
             yield return new(uri!, codec, Int(element, "id"), Int(element, "width"), Int(element, "height"), Int(element, "bandwidth"));
         }
     }
@@ -148,14 +468,15 @@ public sealed class BilibiliClient(HttpClient httpClient, BilibiliClientOptions?
     private static bool TryMediaUri(string value, out Uri? uri) => Uri.TryCreate(value, UriKind.Absolute, out uri) &&
         uri.Scheme is "https" or "http" && string.IsNullOrEmpty(uri.UserInfo);
 
-    private static MediaSession Session(ContentKey key, MediaTrack video, MediaTrack? audio, DateTimeOffset now)
+    private static MediaSession Session(ContentKey key, MediaTrack video, MediaTrack? audio, DateTimeOffset now,
+        MediaSelectionSummary? selection = null)
     {
         var expiries = new[] { Expiry(video.Url), audio is null ? null : Expiry(audio.Url) }.OfType<DateTimeOffset>().ToArray();
         return new(key, video, audio, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["User-Agent"] = UserAgent,
             ["Referer"] = $"https://www.bilibili.com/video/{key.Bvid}/"
-        }, now, expiries.Length == 0 ? null : expiries.Min());
+        }, now, expiries.Length == 0 ? null : expiries.Min(), selection);
     }
 
     private static DateTimeOffset? Expiry(Uri uri)
@@ -171,9 +492,10 @@ public sealed class BilibiliClient(HttpClient httpClient, BilibiliClientOptions?
         return null;
     }
 
-    private async Task<JsonElement> GetJsonAsync(string url, CancellationToken ct, bool acceptAnonymousNav = false)
+    private async Task<JsonElement> GetJsonAsync(string url, CancellationToken ct, bool acceptAnonymousNav = false,
+        string? cookieOverride = null)
     {
-        var body = await GetTextAsync(url, ct);
+        var body = await GetTextAsync(url, ct, cookieOverride);
         JsonElement root;
         try { using var document = JsonDocument.Parse(body); root = document.RootElement.Clone(); }
         catch (JsonException) { throw InvalidResponse("The service returned an unreadable response."); }
@@ -185,14 +507,46 @@ public sealed class BilibiliClient(HttpClient httpClient, BilibiliClientOptions?
         return root;
     }
 
-    private async Task<string> GetTextAsync(string url, CancellationToken ct)
+    private async Task<(JsonElement Root, IReadOnlyList<string> SetCookies)> GetJsonWithCookiesAsync(string url,
+        CancellationToken ct)
     {
+        string body;
+        List<string> setCookies;
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
             request.Headers.Referrer = new Uri(Referer);
-            if (_visitorCookies is { } cookies) request.Headers.TryAddWithoutValidation("Cookie", cookies);
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!response.IsSuccessStatusCode) throw HttpFailure(response.StatusCode);
+            setCookies = response.Headers.TryGetValues("Set-Cookie", out var values)
+                ? values.ToList() : [];
+            body = await response.Content.ReadAsStringAsync(ct);
+        }
+        catch (HttpRequestException)
+        { throw new ContentAccessException(ContentFailureKind.Network, "The content service could not be reached."); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { throw new ContentAccessException(ContentFailureKind.Network, "The content request timed out."); }
+        JsonElement root;
+        try { using var document = JsonDocument.Parse(body); root = document.RootElement.Clone(); }
+        catch (JsonException) { throw InvalidResponse("The service returned an unreadable response."); }
+        if (!Property(root, "code").TryGetInt32Safe(out var code) || code != 0)
+        {
+            if (code != 0) throw ServiceFailure((int)code);
+            throw InvalidResponse("The service response did not include a result code.");
+        }
+        return (root, setCookies);
+    }
+
+    private async Task<string> GetTextAsync(string url, CancellationToken ct, string? cookieOverride = null)
+    {
+        try
+        {
+            string? cookie = cookieOverride ?? RequestCookieHeader();
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+            request.Headers.Referrer = new Uri(Referer);
+            if (cookie is { Length: > 0 }) request.Headers.TryAddWithoutValidation("Cookie", cookie);
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode) throw HttpFailure(response.StatusCode);
             return await response.Content.ReadAsStringAsync(ct);
@@ -201,6 +555,13 @@ public sealed class BilibiliClient(HttpClient httpClient, BilibiliClientOptions?
         { throw new ContentAccessException(ContentFailureKind.Network, "The content service could not be reached."); }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         { throw new ContentAccessException(ContentFailureKind.Network, "The content request timed out."); }
+    }
+
+    private string? RequestCookieHeader()
+    {
+        lock (_accountGate)
+            if (_accountCookies is { } account) return account;
+        return _visitorCookies;
     }
 
     private static bool IsProgressiveMp4(JsonElement result) =>

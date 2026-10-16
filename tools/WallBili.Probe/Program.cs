@@ -20,9 +20,9 @@ internal static class Probe
             Console.WriteLine("""
                 WallBili content and queue probe (.NET 10)
                 video INPUT                         Metadata and all BVID/CID parts
-                media INPUT [--page N] [--format mp4|dash]  Resolve twice; safe format summary
+                media INPUT [--page N]              Resolve twice; safe format summary
                 collection season|series UP_ID ID [--page N] [--size N]
-                check-playback INPUT [--page N] [--format mp4|dash] [--mpv PATH] [--headless]
+                check-playback INPUT [--page N] [--mpv PATH] [--headless]
                 check-queue INPUT1 INPUT2 [--mpv PATH] [--headless]
                 INPUT: a BVID or https://www.bilibili.com/video/BVID/?p=N
                 check-playback verifies decoded A/V, clock, pause, resume and seek.
@@ -42,9 +42,7 @@ internal static class Probe
         try
         {
             ValidateOptions(args);
-            var format = Option(args, "--format") ?? "mp4";
-            if (format is not ("mp4" or "dash")) throw new ArgumentException("Unknown media format.");
-            var bili = new BilibiliClient(client, new BilibiliClientOptions { PreferProgressiveMp4 = format == "mp4" });
+            var bili = new BilibiliClient(client);
             switch (args[0])
             {
                 case "video":
@@ -282,9 +280,9 @@ internal static class Probe
         var allowed = args[0] switch
         {
             "video" => Array.Empty<string>(),
-            "media" => new[] { "--page", "--format" },
+            "media" => new[] { "--page" },
             "collection" => new[] { "--page", "--size" },
-            "check-playback" => new[] { "--page", "--format", "--mpv", "--headless" },
+            "check-playback" => new[] { "--page", "--mpv", "--headless" },
             "check-queue" => new[] { "--mpv", "--headless" },
             _ => throw new ArgumentException("Unknown command.")
         };
