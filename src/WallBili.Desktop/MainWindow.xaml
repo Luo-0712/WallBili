@@ -1,143 +1,712 @@
 <Window x:Class="WallBili.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="WallBili · 视频桌面" Width="1180" Height="960" MinWidth="960" MinHeight="800"
-        Background="#F5F6F8" Loaded="Window_Loaded" Closing="Window_Closing">
-    <Grid Margin="24">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <DockPanel Margin="0,0,0,16">
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                <TextBlock x:Name="AccountText" Text="未登录" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="#536170"/>
-                <Button x:Name="LoginButton" Content="登录" Click="Login_Click" Margin="0,0,8,0"/>
-                <Button Content="收起到托盘" Click="Hide_Click"/><Button Content="退出" Click="Exit_Click"/>
-            </StackPanel>
-            <TextBlock Text="WallBili" FontSize="28" FontWeight="SemiBold" Foreground="#17212D"/>
-            <TextBlock Text="视频桌面与连续播放" VerticalAlignment="Center" Foreground="#536170" Margin="18,0,0,0"/>
-        </DockPanel>
-        <StackPanel Grid.Row="1" x:Name="ImportPanel" Margin="0,0,0,16">
-            <Grid Margin="0,0,0,8">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Text="视频链接 / BV" VerticalAlignment="Center"/>
-                <TextBox x:Name="VideoInput" Grid.Column="1" ToolTip="导入视频及其全部分 P"/>
-                <Button Grid.Column="2" Content="添加视频" Click="ImportVideo_Click" Margin="8,0,0,0"/>
-            </Grid>
-            <Grid Margin="0,0,0,8">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Text="合集 / 系列链接" VerticalAlignment="Center"/>
-                <TextBox x:Name="CollectionInput" Grid.Column="1" ToolTip="space.bilibili.com/UP主ID/lists/合集ID?type=season 或 type=series"/>
-                <Button Grid.Column="2" Content="导入合集" Click="ImportCollection_Click" Margin="8,0,0,0"/>
-            </Grid>
-            <WrapPanel>
-                <TextBlock Text="也可填写 UP 主 ID" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBox x:Name="UploaderInput" Width="125"/>
-                <TextBlock Text="合集 ID" VerticalAlignment="Center" Margin="12,0,8,0"/>
-                <TextBox x:Name="CollectionIdInput" Width="125"/>
-                <ComboBox x:Name="KindBox" SelectedIndex="0" Width="100" Margin="10,0,8,0" VerticalContentAlignment="Center">
-                    <ComboBoxItem Content="合集"/><ComboBoxItem Content="系列"/>
-                </ComboBox>
-                <Button Content="按 ID 导入" Click="ImportIds_Click"/>
-            </WrapPanel>
-        </StackPanel>
-        <Grid Grid.Row="2" x:Name="ListsPanel">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <DockPanel Margin="0,0,14,0">
-                <TextBlock DockPanel.Dock="Top" Text="我的来源" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                    <Button Content="刷新所选来源" Click="RefreshSource_Click" Margin="0,0,0,6"/>
-                    <Button Content="移除来源" Click="RemoveSource_Click" Margin="0" ToolTip="目录与队列会保留"/>
+        Title="WallBili · 桌面音乐播放器" Width="1440" Height="960" MinWidth="1180" MinHeight="820"
+        Background="{DynamicResource Surface0}"
+        FontFamily="{DynamicResource UiFont}"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True"
+        Loaded="Window_Loaded" Closing="Window_Closing">
+    <!--
+        颜色 / 字号 / 容器样式全部来自 App.xaml 的设计令牌。
+        这里一律用 DynamicResource：本文件需要能脱离 App.xaml 单独解析（回归测试会这么做）。
+    -->
+    <Grid Margin="0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ==================== 侧边栏 ==================== -->
+        <Border Grid.Column="0" Background="{DynamicResource Surface0}"
+                BorderBrush="{DynamicResource LineSoft}" BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Margin="20,24,20,0">
+                    <TextBlock Text="WallBili" FontSize="18" FontWeight="Bold"
+                               Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                    <TextBlock Text="桌面音乐播放器" FontSize="9" Margin="0,7,0,0"
+                               Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
                 </StackPanel>
-                <ListBox x:Name="SourcesBox" DisplayMemberPath="Title" SelectionChanged="Sources_Changed"/>
-            </DockPanel>
-            <DockPanel Grid.Column="1" Margin="0,0,14,0">
-                <TextBlock DockPanel.Dock="Top" Text="视频目录" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                    <Button Content="加入队列" Click="Enqueue_Click"/><Button Content="全部加入" Click="EnqueueAll_Click"/>
-                    <Button Content="↑" Click="EntryUp_Click" ToolTip="目录上移"/><Button Content="↓" Click="EntryDown_Click" ToolTip="目录下移"/>
-                    <Button Content="删除" Click="DeleteEntry_Click"/>
-                </WrapPanel>
-                <DataGrid x:Name="CatalogGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
-                          SelectionMode="Extended" SelectionUnit="FullRow" HeadersVisibility="Column" CanUserSortColumns="False">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="标题" Binding="{Binding Entry.Title}" Width="*"/>
-                        <DataGridTextColumn Header="UP 主" Binding="{Binding Entry.Uploader}" Width="80"/>
-                        <DataGridTextColumn Header="分 P" Binding="{Binding Entry.Page}" Width="45"/>
-                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="105"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </DockPanel>
-            <DockPanel Grid.Column="2">
-                <TextBlock x:Name="QueueTitle" DockPanel.Dock="Top" Text="播放队列" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                    <Button Content="播放所选" Click="PlaySelected_Click"/>
-                    <Button Content="↑" Click="QueueUp_Click" ToolTip="队列上移"/><Button Content="↓" Click="QueueDown_Click" ToolTip="队列下移"/>
-                    <Button Content="移除" Click="RemoveQueue_Click"/>
-                </WrapPanel>
-                <DataGrid x:Name="QueueGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
-                          SelectionMode="Single" HeadersVisibility="Column" CanUserSortColumns="False" MouseDoubleClick="Queue_DoubleClick">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="" Binding="{Binding Marker}" Width="32"/>
-                        <DataGridTextColumn Header="标题" Binding="{Binding Title}" Width="*"/>
-                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="100"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </DockPanel>
+
+                <!-- 主导航：Tag 即 ContentTabs 的页索引 -->
+                <StackPanel Grid.Row="1" x:Name="NavPanel" Margin="12,40,12,0">
+                    <Button x:Name="NavWorkbenchButton" Style="{DynamicResource Btn.Nav}" Content="播放工作台"
+                            Tag="0" Click="Nav_Click" />
+                    <Button x:Name="NavLibraryButton" Style="{DynamicResource Btn.Nav}" Content="我的片库"
+                            Tag="2" Click="Nav_Click" />
+                    <Button x:Name="NavQueueButton" Style="{DynamicResource Btn.Nav}" Content="播放队列"
+                            Tag="3" Click="Nav_Click" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="2" Text="我的来源" FontSize="10" Foreground="{DynamicResource Ink400}"
+                           Margin="20,34,20,8" TextWrapping="NoWrap" />
+
+                <Grid Grid.Row="3" Margin="12,0,12,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <ListBox x:Name="SourcesBox" DisplayMemberPath="Title" SelectionChanged="Sources_Changed"
+                             Margin="0,0,0,8" />
+                    <StackPanel Grid.Row="1">
+                        <Button Style="{DynamicResource Btn.Subtle}" Content="刷新所选来源" MinHeight="32" Height="32"
+                                Click="RefreshSource_Click" Margin="0,0,0,6" />
+                        <Button Style="{DynamicResource Btn.Subtle}" Content="移除来源" MinHeight="32" Height="32"
+                                Click="RemoveSource_Click" ToolTip="目录与队列会保留" />
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Grid.Row="4" x:Name="NavPanelSecondary" Margin="12,24,12,0">
+                    <Button x:Name="NavAddSourceButton" Style="{DynamicResource Btn.Nav}" Content="添加来源"
+                            Tag="2" Click="Nav_Click" />
+                    <Button Style="{DynamicResource Btn.Nav}" Content="桌面与后台" Tag="4" Click="Nav_Click" />
+                    <Button Style="{DynamicResource Btn.Nav}" Content="订阅漫游" Tag="1" Click="Nav_Click" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="5" Margin="20,0,20,20">
+                    <TextBlock Text="后台播放" FontSize="10" Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                    <TextBlock Text="音乐播放中" FontSize="11" Margin="0,5,0,0"
+                               Foreground="{DynamicResource Ink700}" TextWrapping="NoWrap" />
+                    <TextBlock Text="关闭窗口将收起到托盘" FontSize="9" Margin="0,16,0,8"
+                               Foreground="{DynamicResource Ink400}" TextWrapping="NoWrap" />
+                    <Button Style="{DynamicResource Btn.Subtle}" Content="收起到托盘" MinHeight="34" Height="34"
+                            Click="Hide_Click" />
+                    <Button Style="{DynamicResource Btn.Ghost}" Content="退出 WallBili" MinHeight="34" Height="34"
+                            Margin="0,6,0,0" Click="Exit_Click" />
+                    <TextBlock Text="WallBili for Windows" FontSize="9" Margin="0,12,0,0"
+                               Foreground="{DynamicResource Ink400}" TextWrapping="NoWrap" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ==================== 主区域 ==================== -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 顶栏 -->
+            <Grid Grid.Row="0" Height="58">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0" Width="320" HorizontalAlignment="Left" Margin="24,0,0,0" Height="34"
+                      VerticalAlignment="Center">
+                    <TextBox x:Name="SearchBox" Style="{DynamicResource Tb.Search}" Padding="12,7" />
+                    <TextBlock Text="筛选标题或 UP 主" FontSize="11" IsHitTestVisible="False"
+                               Foreground="{DynamicResource Ink400}" VerticalAlignment="Center"
+                               Margin="13,0,0,0" TextWrapping="NoWrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text.Length, ElementName=SearchBox}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,24,0">
+                    <TextBlock x:Name="StatusText" Text="正在读取本地资料…" FontSize="10"
+                               Foreground="{DynamicResource Ink500}" VerticalAlignment="Center"
+                               MaxWidth="340" Margin="0,0,16,0" TextWrapping="NoWrap"
+                               AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock x:Name="AccountText" Text="未登录" FontSize="11"
+                               Foreground="{DynamicResource Ink700}" VerticalAlignment="Center"
+                               Margin="0,0,12,0" TextWrapping="NoWrap" />
+                    <Button x:Name="LoginButton" Style="{DynamicResource Btn.Ghost}" Content="登录"
+                            MinHeight="32" Height="32" Click="Login_Click" />
+                </StackPanel>
+            </Grid>
+
+            <TabControl Grid.Row="1" x:Name="ContentTabs" Style="{DynamicResource Tabs.Plain}"
+                        SelectionChanged="Tabs_Changed">
+                <!-- ================= 0. 播放工作台 ================= -->
+                <TabItem Header="播放工作台">
+                    <Grid x:Name="ListsPanel" Margin="24,8,24,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="播放工作台" FontSize="27" FontWeight="Bold"
+                                           Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                                <TextBlock Text="音乐在后台，桌面照常。" FontSize="12" Margin="0,10,0,0"
+                                           Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Style="{DynamicResource Btn.Primary}" Content="添加来源"
+                                    MinHeight="36" Height="36" Padding="20,0" VerticalAlignment="Bottom"
+                                    Tag="2" Click="Nav_Click" />
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="272" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Style="{DynamicResource Panel}" Padding="18" Margin="0,0,20,0">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                                        <TextBlock Text="接下来播放" FontSize="15" FontWeight="Bold"
+                                                   Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                                        <TextBlock Text="队列中当前项之后的条目" FontSize="10"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource Ink400}" TextWrapping="NoWrap" />
+                                    </Grid>
+                                    <ListBox x:Name="UpcomingBox" Grid.Row="1" MinHeight="156">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="11"
+                                                               Foreground="{DynamicResource Ink700}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               TextWrapping="NoWrap" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Status}" FontSize="10"
+                                                               Margin="12,0,0,0"
+                                                               Foreground="{DynamicResource Ink400}"
+                                                               TextWrapping="NoWrap" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                            </Border>
+
+                            <Border Grid.Column="1" Style="{DynamicResource Panel}" Padding="18">
+                                <StackPanel>
+                                    <TextBlock Text="桌面画面" FontSize="15" FontWeight="Bold"
+                                               Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                                    <TextBlock Text="显示效果示意" FontSize="10" Margin="0,10,0,0"
+                                               Foreground="{DynamicResource Ink400}" TextWrapping="NoWrap" />
+                                    <Border Height="112" Margin="0,12,0,0" Background="{DynamicResource Surface8}"
+                                            CornerRadius="4">
+                                        <Border Margin="14" Background="{DynamicResource Surface1}" CornerRadius="4">
+                                            <TextBlock Text="16:9" FontSize="9" HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource Ink400}" TextWrapping="NoWrap" />
+                                        </Border>
+                                    </Border>
+                                    <TextBlock x:Name="DesktopStatus" Text="正在连接桌面…" FontSize="10"
+                                               Margin="0,12,0,0" Foreground="{DynamicResource Ink500}" />
+                                    <Button Style="{DynamicResource Btn.Subtle}" Content="调整桌面设置 →"
+                                            MinHeight="32" Height="32" Margin="0,12,0,0"
+                                            Tag="4" Click="Nav_Click" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border Grid.Row="2" Style="{DynamicResource Panel}" Padding="18" VerticalAlignment="Top">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,24,0">
+                                    <TextBlock Text="播放选项" FontSize="15" FontWeight="Bold"
+                                               Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                                    <TextBlock Text="播放模式" FontSize="10" Margin="0,12,0,6"
+                                               Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                                    <ComboBox x:Name="ModeBox" Width="160" SelectedIndex="0"
+                                              SelectionChanged="Mode_Changed" VerticalContentAlignment="Center">
+                                        <ComboBoxItem Content="顺序播放" />
+                                        <ComboBoxItem Content="列表循环" />
+                                    </ComboBox>
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="播放到末尾后从第一项继续；订阅漫游期间模式由漫游队列接管。"
+                                           FontSize="10" VerticalAlignment="Bottom" Margin="0,0,0,10"
+                                           Foreground="{DynamicResource Ink400}" />
+                                <Button Grid.Column="2" Style="{DynamicResource Btn.Ghost}" Content="更多后台设置 →"
+                                        MinHeight="32" Height="32" VerticalAlignment="Bottom" Margin="0,0,0,10"
+                                        Tag="4" Click="Nav_Click" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- ================= 1. 订阅漫游 ================= -->
+                <TabItem Header="订阅漫游">
+                    <Grid x:Name="RoamingPanel" Margin="24,8,24,0" IsEnabled="False">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="订阅漫游" FontSize="27" FontWeight="Bold"
+                                           Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                                <TextBlock x:Name="RoamingSummaryText" Text="正在读取订阅…" FontSize="12" Margin="0,10,0,0"
+                                           Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                                <Button x:Name="RoamingManageButton" Style="{DynamicResource Btn.Subtle}"
+                                        Content="管理订阅" MinHeight="36" Height="36" Click="ManageSubscriptions_Click" />
+                                <Button x:Name="RoamingRefreshButton" Style="{DynamicResource Btn.Subtle}"
+                                        Content="刷新订阅" MinHeight="36" Height="36" Margin="8,0,0,0"
+                                        Click="RefreshRoaming_Click" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Grid.Row="1" Style="{DynamicResource Panel}" Padding="18" Margin="0,0,0,20">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button x:Name="RoamingStartButton" Grid.Column="0" Style="{DynamicResource Btn.Primary}"
+                                            Content="开始漫游" MinHeight="36" Height="36" Padding="18,0" Click="StartRoaming_Click" />
+                                    <Button x:Name="RoamingPauseButton" Grid.Column="1" Style="{DynamicResource Btn.Subtle}"
+                                            Content="暂停" MinHeight="36" Height="36" Margin="8,0,0,0" Click="Pause_Click" />
+                                    <Button x:Name="RoamingStopButton" Grid.Column="2" Style="{DynamicResource Btn.Ghost}"
+                                            Content="停止" MinHeight="36" Height="36" Margin="8,0,0,0" Click="Stop_Click" />
+                                    <Button x:Name="RoamingNextButton" Grid.Column="3" Style="{DynamicResource Btn.Ghost}"
+                                            Content="下一项" MinHeight="36" Height="36" Margin="8,0,0,0" Click="Next_Click" />
+                                    <Button Grid.Column="4" Style="{DynamicResource Btn.Link}" Content="取消订阅漫游"
+                                            MinHeight="36" Margin="16,0,0,0" Click="CancelRoaming_Click" />
+                                    <TextBlock x:Name="RoamingStatusText" Grid.Column="5" Text="未开始" FontSize="11"
+                                               HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                                </Grid>
+
+                                <Grid Grid.Row="1" Margin="0,18,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox x:Name="RoamingScheduleBox" Grid.Column="0" Content="定时漫游"
+                                              VerticalAlignment="Center" />
+                                    <TextBox x:Name="RoamingScheduleInput" Grid.Column="1" Width="96" Height="34"
+                                             Margin="16,0,0,0" VerticalContentAlignment="Center"
+                                             ToolTip="例如 07:30" />
+                                    <Button x:Name="RoamingScheduleSaveButton" Grid.Column="2"
+                                            Style="{DynamicResource Btn.Subtle}" Content="保存时间"
+                                            MinHeight="34" Height="34" Margin="8,0,0,0"
+                                            Click="SaveRoamingSchedule_Click" />
+                                    <TextBlock x:Name="RoamingNextScheduleText" Grid.Column="3" Text="尚未安排"
+                                               FontSize="10" Margin="16,0,0,0" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource Ink400}" TextWrapping="NoWrap" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="2" Style="{DynamicResource Panel}" Padding="18" VerticalAlignment="Top">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="漫游队列" FontSize="15" FontWeight="Bold"
+                                           Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                                <WrapPanel x:Name="RoamingPendingPanel" Grid.Row="1" Margin="0,12,0,0" />
+                                <DataGrid x:Name="RoamingGrid" Grid.Row="2" Margin="0,14,0,0" MinHeight="220"
+                                          AutoGenerateColumns="False" IsReadOnly="True"
+                                          SelectionMode="Single" HeadersVisibility="Column"
+                                          MouseDoubleClick="Queue_DoubleClick">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="#" Binding="{Binding Marker}" Width="56" />
+                                        <DataGridTextColumn Header="视频 / 分 P" Binding="{Binding Title}" Width="*" />
+                                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="120" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+                <!-- ================= 2. 我的片库 ================= -->
+                <TabItem Header="我的片库">
+                    <Grid Margin="24,8,24,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="我的片库" FontSize="27" FontWeight="Bold"
+                                           Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                                <TextBlock Text="本地保存的全部视频与分 P，可多选后加入队列。" FontSize="12" Margin="0,10,0,0"
+                                           Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="来源与分 P 都保存在本机" FontSize="10"
+                                       VerticalAlignment="Bottom" Margin="0,0,0,12"
+                                       Foreground="{DynamicResource Ink400}" TextWrapping="NoWrap" />
+                        </Grid>
+
+                        <!-- 添加来源：视频 / 合集 / 按 ID -->
+                        <Border x:Name="ImportPanel" Grid.Row="1" Style="{DynamicResource Panel}"
+                                Padding="18" Margin="0,0,0,18">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="96" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="视频 / BV" FontSize="11"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource Ink700}" />
+                                <TextBox x:Name="VideoInput" Grid.Row="0" Grid.Column="1" Height="34"
+                                         Margin="0,0,12,0" VerticalContentAlignment="Center"
+                                         ToolTip="BV 号或视频链接" />
+                                <Button Grid.Row="0" Grid.Column="3" Style="{DynamicResource Btn.Subtle}"
+                                        Content="导入视频" MinHeight="34" Height="34" Width="104"
+                                        Click="ImportVideo_Click" />
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="合集 / 系列" FontSize="11"
+                                           Margin="0,10,0,0" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource Ink700}" />
+                                <TextBox x:Name="CollectionInput" Grid.Row="1" Grid.Column="1" Height="34"
+                                         Margin="0,10,12,0" VerticalContentAlignment="Center"
+                                         ToolTip="合集或系列链接" />
+                                <Button Grid.Row="1" Grid.Column="3" Style="{DynamicResource Btn.Subtle}"
+                                        Content="导入合集" MinHeight="34" Height="34" Width="104" Margin="0,10,0,0"
+                                        Click="ImportCollection_Click" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="按 ID 导入" FontSize="11"
+                                           Margin="0,10,0,0" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource Ink700}" />
+                                <TextBox x:Name="UploaderInput" Grid.Row="2" Grid.Column="1" Height="34"
+                                         Margin="0,10,12,0" VerticalContentAlignment="Center"
+                                         ToolTip="UP 主 UID" />
+                                <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Margin="0,10,0,0">
+                                    <ComboBox x:Name="KindBox" Width="88" Height="34" SelectedIndex="0"
+                                              VerticalContentAlignment="Center">
+                                        <ComboBoxItem Content="合集" />
+                                        <ComboBoxItem Content="系列" />
+                                    </ComboBox>
+                                    <TextBox x:Name="CollectionIdInput" Width="140" Height="34" Margin="8,0,0,0"
+                                             VerticalContentAlignment="Center" ToolTip="合集 / 系列 ID" />
+                                </StackPanel>
+                                <Button Grid.Row="2" Grid.Column="3" Style="{DynamicResource Btn.Subtle}"
+                                        Content="按 ID 导入" MinHeight="34" Height="34" Width="104" Margin="12,10,0,0"
+                                        Click="ImportIds_Click" />
+                            </Grid>
+                        </Border>
+
+                        <!-- 多选操作条 -->
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+                            <Button Style="{DynamicResource Btn.Subtle}" Content="加入队列" MinHeight="32" Height="32"
+                                    Click="Enqueue_Click" />
+                            <Button Style="{DynamicResource Btn.Subtle}" Content="全部加入" MinHeight="32" Height="32"
+                                    Margin="8,0,0,0" Click="EnqueueAll_Click" />
+                            <Button Style="{DynamicResource Btn.Ghost}" Content="上移" MinHeight="32" Height="32"
+                                    Margin="8,0,0,0" Click="EntryUp_Click" />
+                            <Button Style="{DynamicResource Btn.Ghost}" Content="下移" MinHeight="32" Height="32"
+                                    Margin="8,0,0,0" Click="EntryDown_Click" />
+                            <Button Style="{DynamicResource Btn.Ghost}" Content="删除" MinHeight="32" Height="32"
+                                    Margin="8,0,0,0" Click="DeleteEntry_Click" />
+                        </StackPanel>
+
+                        <Border Grid.Row="3" Style="{DynamicResource Panel}" Padding="6" VerticalAlignment="Top">
+                            <DataGrid x:Name="CatalogGrid" MinHeight="260" AutoGenerateColumns="False"
+                                      SelectionMode="Extended" HeadersVisibility="Column">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="视频 / 分 P" Binding="{Binding Entry.Title}" Width="*" />
+                                    <DataGridTextColumn Header="UP 主" Binding="{Binding Entry.Uploader}" Width="150" />
+                                    <DataGridTextColumn Header="分 P" Binding="{Binding Entry.Page}" Width="60" />
+                                    <DataGridTextColumn Header="时长" Binding="{Binding Entry.Duration}" Width="80" />
+                                    <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="110" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- ================= 3. 播放队列 ================= -->
+                <TabItem Header="播放队列">
+                    <Grid Margin="24,8,24,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                            <TextBlock Text="播放队列" FontSize="27" FontWeight="Bold"
+                                       Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                            <TextBlock Text="顺序即播放顺序，双击任意条目立即切换。" FontSize="12" Margin="0,10,0,0"
+                                       Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                        </StackPanel>
+
+                        <Border Grid.Row="1" Style="{DynamicResource Panel}" Padding="18" VerticalAlignment="Top">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Name="QueueTitle" Grid.Row="0" Text="手动队列（0）" FontSize="15"
+                                           FontWeight="Bold" Foreground="{DynamicResource Ink900}"
+                                           TextWrapping="NoWrap" />
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,14,0,0">
+                                    <Button Style="{DynamicResource Btn.Primary}" Content="播放所选" MinHeight="32"
+                                            Height="32" Padding="18,0" Click="PlaySelected_Click" />
+                                    <Button x:Name="QueueUpButton" Style="{DynamicResource Btn.Subtle}" Content="上移"
+                                            MinHeight="32" Height="32" Margin="8,0,0,0" Click="QueueUp_Click" />
+                                    <Button x:Name="QueueDownButton" Style="{DynamicResource Btn.Subtle}" Content="下移"
+                                            MinHeight="32" Height="32" Margin="8,0,0,0" Click="QueueDown_Click" />
+                                    <Button x:Name="RemoveQueueButton" Style="{DynamicResource Btn.Ghost}" Content="移除"
+                                            MinHeight="32" Height="32" Margin="8,0,0,0" Click="RemoveQueue_Click" />
+                                </StackPanel>
+                                <DataGrid x:Name="QueueGrid" Grid.Row="2" Margin="0,14,0,0" MinHeight="240"
+                                          AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
+                                          HeadersVisibility="Column" MouseDoubleClick="Queue_DoubleClick">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="" Binding="{Binding Marker}" Width="36" />
+                                        <DataGridTextColumn Header="视频 / 分 P" Binding="{Binding Title}" Width="*" />
+                                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="120" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- ================= 4. 桌面与后台 ================= -->
+                <TabItem Header="桌面与后台">
+                    <Grid Margin="24,8,24,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                            <TextBlock Text="桌面与后台" FontSize="27" FontWeight="Bold"
+                                       Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+                            <TextBlock Text="画面投到桌面，窗口收起后音乐继续。" FontSize="12" Margin="0,10,0,0"
+                                       Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="DesktopPanel" Grid.Row="1" VerticalAlignment="Top">
+                            <Border Style="{DynamicResource Panel}" Padding="18">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="桌面画面" FontSize="15" FontWeight="Bold"
+                                               Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+
+                                    <Grid Grid.Row="1" Margin="0,16,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="目标显示器" FontSize="11"
+                                                   VerticalAlignment="Center" Foreground="{DynamicResource Ink700}" />
+                                        <ComboBox x:Name="DisplayBox" Grid.Column="1" Height="34" Margin="16,0,0,0"
+                                                  HorizontalAlignment="Left" MinWidth="220"
+                                                  VerticalContentAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="填充方式" FontSize="11" Margin="32,0,0,0"
+                                                   VerticalAlignment="Center" Foreground="{DynamicResource Ink700}" />
+                                        <ComboBox x:Name="FitBox" Grid.Column="3" Height="34" Margin="16,0,0,0"
+                                                  HorizontalAlignment="Left" MinWidth="160" SelectedIndex="1"
+                                                  VerticalContentAlignment="Center">
+                                            <ComboBoxItem Content="铺满窗口（裁切）" />
+                                            <ComboBoxItem Content="完整显示（留黑边）" />
+                                        </ComboBox>
+                                    </Grid>
+
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,18,0,0">
+                                        <CheckBox x:Name="WallpaperBox" Content="把画面设为桌面壁纸" VerticalAlignment="Center" />
+                                        <CheckBox x:Name="ContinueAudioBox" Content="隐藏画面时继续播放音乐"
+                                                  Margin="32,0,0,0" VerticalAlignment="Center" />
+                                        <CheckBox x:Name="StartupBox" Content="登录后在托盘启动" Margin="32,0,0,0"
+                                                  VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,20,0,0">
+                                        <Button Style="{DynamicResource Btn.Primary}" Content="保存设置"
+                                                MinHeight="36" Height="36" Padding="20,0" Click="ApplyDesktop_Click" />
+                                        <TextBlock Text="保存后立即生效；桌面画面状态见「播放工作台」。" FontSize="10"
+                                                   Margin="16,0,0,0" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource Ink400}" TextWrapping="NoWrap" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <Border Style="{DynamicResource Panel}" Padding="18" Margin="0,16,0,0">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="播放器" FontSize="15" FontWeight="Bold"
+                                               Foreground="{DynamicResource Ink900}" TextWrapping="NoWrap" />
+
+                                    <Grid Grid.Row="1" Margin="0,16,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="视频画质" FontSize="11" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource Ink700}" />
+                                        <ComboBox x:Name="VideoQualityBox" Grid.Column="1" Height="34" Margin="16,0,0,0"
+                                                  HorizontalAlignment="Left" MinWidth="220"
+                                                  DisplayMemberPath="Label" VerticalContentAlignment="Center"
+                                                  SelectionChanged="VideoQuality_Changed" />
+                                        <TextBlock Grid.Column="2" Text="音频音质" FontSize="11" Margin="32,0,0,0"
+                                                   VerticalAlignment="Center" Foreground="{DynamicResource Ink700}" />
+                                        <ComboBox x:Name="AudioQualityBox" Grid.Column="3" Height="34" Margin="16,0,0,0"
+                                                  HorizontalAlignment="Left" MinWidth="200"
+                                                  DisplayMemberPath="Label" VerticalContentAlignment="Center"
+                                                  SelectionChanged="AudioQuality_Changed" />
+                                    </Grid>
+
+                                    <Grid Grid.Row="2" Margin="0,16,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="mpv 路径" FontSize="11" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource Ink700}" />
+                                        <TextBox x:Name="MpvPathInput" Grid.Column="1" Height="34" Margin="16,0,0,0"
+                                                 VerticalContentAlignment="Center" />
+                                        <TextBlock x:Name="QualityStatusText" Grid.Column="2" Text="" FontSize="10"
+                                                   Margin="16,0,0,0" VerticalAlignment="Center" MaxWidth="420"
+                                                   Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </TabItem>
+
+            </TabControl>
+            <!-- ==================== 底部播放条 ==================== -->
+            <Border Grid.Row="2" Background="{DynamicResource Surface1}"
+                    BorderBrush="{DynamicResource LineSoft}" BorderThickness="0,1,0,0">
+                <Grid x:Name="PlayerPanel" Height="104">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="300" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 当前播放 -->
+                    <StackPanel Grid.Column="0" Margin="24,0,16,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="PlaybackSourceText" Text="手动播放" FontSize="9"
+                                   Foreground="{DynamicResource Ink400}" TextWrapping="NoWrap" />
+                        <TextBlock x:Name="CurrentText" Text="尚未选择播放项" FontSize="13" FontWeight="Bold"
+                                   Margin="0,7,0,0" Foreground="{DynamicResource Ink900}"
+                                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                        <TextBlock x:Name="PositionText" Text="00:00 / 00:00" FontSize="10" Margin="0,7,0,0"
+                                   Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                    </StackPanel>
+
+                    <!-- 传输控制 + 进度 -->
+                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button Style="{DynamicResource Btn.Subtle}" Content="上一项" MinHeight="32" Height="32"
+                                    Click="Previous_Click" />
+                            <Button Style="{DynamicResource Btn.Primary}" Content="播放" MinHeight="32" Height="32"
+                                    Margin="8,0,0,0" Padding="18,0" Click="Play_Click" />
+                            <Button Style="{DynamicResource Btn.Subtle}" Content="暂停" MinHeight="32" Height="32"
+                                    Margin="8,0,0,0" Click="Pause_Click" />
+                            <Button Style="{DynamicResource Btn.Subtle}" Content="停止" MinHeight="32" Height="32"
+                                    Margin="8,0,0,0" Click="Stop_Click" />
+                            <Button Style="{DynamicResource Btn.Subtle}" Content="下一项" MinHeight="32" Height="32"
+                                    Margin="8,0,0,0" Click="Next_Click" />
+                            <Button Style="{DynamicResource Btn.Ghost}" Content="重新取流" MinHeight="32" Height="32"
+                                    Margin="8,0,0,0" Click="Reload_Click" />
+                        </StackPanel>
+                        <ProgressBar x:Name="Progress" Grid.Row="1" Height="4" Margin="0,14,0,0"
+                                     Minimum="0" Maximum="1" Value="0" BorderThickness="0"
+                                     Background="{DynamicResource Surface8}"
+                                     Foreground="{DynamicResource Ink900}" />
+                    </Grid>
+
+                    <!-- 跳转 + 音量 -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                                Margin="24,0,24,0">
+                        <TextBlock Text="跳转到（秒）" FontSize="10" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                        <TextBox x:Name="SeekInput" Width="76" Height="32" Margin="10,0,0,0"
+                                 VerticalContentAlignment="Center" />
+                        <Button Style="{DynamicResource Btn.Subtle}" Content="跳转" MinHeight="32" Height="32"
+                                Margin="8,0,0,0" Click="Seek_Click" />
+                        <TextBlock Text="音量" FontSize="10" Margin="28,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Ink500}" TextWrapping="NoWrap" />
+                        <Slider x:Name="VolumeSlider" Width="140" Margin="10,0,0,0" Minimum="0" Maximum="100"
+                                VerticalAlignment="Center" />
+                        <Button Style="{DynamicResource Btn.Subtle}" Content="设置音量" MinHeight="32" Height="32"
+                                Margin="8,0,0,0" Click="Volume_Click" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
         </Grid>
-        <Border Grid.Row="3" Background="White" Padding="16" CornerRadius="8" Margin="0,18,0,12">
-            <StackPanel x:Name="PlayerPanel">
-                <TextBlock x:Name="CurrentText" Text="尚未选择播放项" FontSize="16" FontWeight="SemiBold"/>
-                <TextBlock x:Name="PositionText" Text="00:00 / 00:00" Foreground="#536170" Margin="0,5,0,8"/>
-                <ProgressBar x:Name="Progress" Height="5" Maximum="1" Margin="0,0,0,12"/>
-                <WrapPanel Margin="0,0,0,10">
-                    <Button Content="上一项" Click="Previous_Click"/><Button Content="播放 / 继续" Click="Play_Click"/>
-                    <Button Content="暂停" Click="Pause_Click"/><Button Content="停止" Click="Stop_Click"/>
-                    <Button Content="下一项" Click="Next_Click"/><Button Content="重新取流" Click="Reload_Click"/>
-                    <ComboBox x:Name="ModeBox" Width="100" SelectedIndex="0" SelectionChanged="Mode_Changed" VerticalContentAlignment="Center">
-                        <ComboBoxItem Content="顺序播放"/><ComboBoxItem Content="列表循环"/>
-                    </ComboBox>
-                </WrapPanel>
-                <WrapPanel Margin="0,0,0,10">
-                    <TextBlock Text="画质" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <ComboBox x:Name="VideoQualityBox" Width="170" DisplayMemberPath="Label"
-                              SelectionChanged="VideoQuality_Changed" VerticalContentAlignment="Center" ToolTip="自动模式选择最高可用画质；手动选择会保存为全局偏好"/>
-                    <TextBlock Text="音质" VerticalAlignment="Center" Margin="14,0,8,0"/>
-                    <ComboBox x:Name="AudioQualityBox" Width="170" DisplayMemberPath="Label"
-                              SelectionChanged="AudioQuality_Changed" VerticalContentAlignment="Center" ToolTip="自动模式选择最高普通音质；无损和杜比需手动选择"/>
-                    <TextBlock x:Name="QualityStatusText" Text="" VerticalAlignment="Center" Foreground="#536170"
-                               Margin="14,0,0,0" TextWrapping="Wrap"/>
-                </WrapPanel>
-                <WrapPanel Margin="0,0,0,10">
-                    <TextBlock Text="跳转（秒）" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBox x:Name="SeekInput" Width="85" Text="0"/><Button Content="跳转" Click="Seek_Click" Margin="8,0,18,0"/>
-                    <TextBlock Text="音量" VerticalAlignment="Center"/>
-                    <Slider x:Name="VolumeSlider" Width="130" Minimum="0" Maximum="100" Value="70" VerticalAlignment="Center" Margin="10,0"/>
-                    <Button Content="设置音量" Click="Volume_Click"/>
-                </WrapPanel>
-                <DockPanel>
-                    <TextBlock Text="mpv 路径" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                    <TextBox x:Name="MpvPathInput" ToolTip="mpv.exe 完整路径；修改后下次加载生效"/>
-                </DockPanel>
-            </StackPanel>
-        </Border>
-        <Border Grid.Row="4" Background="White" Padding="12" CornerRadius="8" Margin="0,0,0,10">
-            <StackPanel x:Name="DesktopPanel">
-                <WrapPanel Margin="0,0,0,8">
-                    <CheckBox x:Name="WallpaperBox" Content="桌面视频" VerticalAlignment="Center" Margin="0,0,14,0"/>
-                    <ComboBox x:Name="DisplayBox" Width="290" DisplayMemberPath="Label" ToolTip="选择一块屏幕；屏幕离线时暂用主屏"/>
-                    <ComboBox x:Name="FitBox" Width="105" Margin="10,0" SelectedIndex="0">
-                        <ComboBoxItem Content="填充（裁切）"/><ComboBoxItem Content="适应（留边）"/>
-                    </ComboBox>
-                    <Button Content="应用桌面设置" Click="ApplyDesktop_Click"/>
-                </WrapPanel>
-                <WrapPanel Margin="0,0,0,6">
-                    <CheckBox x:Name="ContinueAudioBox" Content="隐藏画面时继续音乐" VerticalAlignment="Center" Margin="0,0,18,0"/>
-                    <CheckBox x:Name="StartupBox" Content="登录后在托盘启动并恢复" VerticalAlignment="Center"/>
-                </WrapPanel>
-                <TextBlock x:Name="DesktopStatus" Foreground="#536170" Text="正在连接桌面…"/>
-            </StackPanel>
-        </Border>
-        <TextBlock Grid.Row="5" x:Name="StatusText" Text="正在读取本地资料…" Foreground="#536170" AutomationProperties.LiveSetting="Polite"/>
     </Grid>
 </Window>

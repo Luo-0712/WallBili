@@ -36,6 +36,8 @@ public partial class MainWindow : Window
     private bool _outputRebindNeeded;
     private Task _pending = Task.CompletedTask;
     private bool _busy, _closing, _closed, _rendering, _ready, _loaded;
+    private bool _accountRestorePending;
+    private DateTimeOffset _accountRetryAt;
     private string _mpvPath;
     private readonly string _preferencesPath;
 
@@ -52,21 +54,26 @@ public partial class MainWindow : Window
         _player = new(() => new() { ExecutablePath = Volatile.Read(ref _mpvPath), WindowId = Volatile.Read(ref _outputHandle),
             FillWindow = _preferences.FillWindow });
         _client = new BilibiliClient(_http);
-        _client.AccountChanged += (_, _) => _ = Dispatcher.InvokeAsync(RenderAccount);
+        _client.AccountChanged += AccountChanged;
         _authStore = new(Path.Combine(directory, "auth.dat"));
         _library = new(_client, new SqliteLibraryStore(Path.Combine(directory, "library.db")), _player,
-            selection: ToSelection());
+            selection: ToSelection(_preferences));
         _library.Changed += (_, _) => _ = Dispatcher.InvokeAsync(Render);
+        _roaming = new(_library, _client);
+        _roaming.Changed += (_, _) => _ = Dispatcher.InvokeAsync(RenderRoaming);
         _tray = new(Dispatcher, ShowControls, TogglePause, () => Next_Click(this, new()), ToggleWallpaper, RequestExit);
         RefreshSettings();
         RefreshDesktop();
         RenderAccount();
+        // 顶栏筛选：TextChanged 不能写在 XAML 里（XAML 需要能脱离处理器单独解析），所以在这里挂。
+        SearchBox.TextChanged += (_, _) => { if (_ready) Render(); };
         SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
         SystemEvents.PowerModeChanged += PowerModeChanged;
         NetworkChange.NetworkAvailabilityChanged += NetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkAddressChanged;
         _timer.Tick += async (_, _) =>
         {
+            if (!_closing && _ready) QueueRoamingTick();
             if (!_busy && !_closing && _ready) await MaintainAsync();
         };
     }
@@ -80,53 +87,79 @@ public partial class MainWindow : Window
         {
             await RestoreAccountAsync(ct); // The stored session is restored before playback resumes.
             await _library.InitializeAsync(ct);
+            await SynchronizeRoamingAccountAsync(ct);
             if (!_host.Attached && !_preferences.ContinueAudioWhenHidden) await _library.PauseAsync(ct);
             _ready = true; VolumeSlider.Value = _library.Snapshot.Playback.Volume;
         }, initializing: true);
         if (_ready) VolumeSlider.Value = _library.Snapshot.Playback.Volume;
         _timer.Start();
+        QueueRoamingTick();
     }
 
     /// <summary>Applies the DPAPI-stored credentials. Confirmed expired credentials are removed from disk;
-    /// temporary network errors keep the file so the next start can try again.</summary>
+    /// temporary service failures keep the file and retry without blocking the local library.</summary>
     private async Task RestoreAccountAsync(CancellationToken ct)
     {
+        _accountRestorePending = false;
         var stored = _authStore.Load();
         if (string.IsNullOrEmpty(stored)) return;
         try { await _client.ImportCookiesAsync(stored, ct); }
-        catch (ContentAccessException ex) when (ex.Kind == ContentFailureKind.AuthenticationRequired)
+        catch (ContentAccessException ex) when (ex.Kind is ContentFailureKind.AuthenticationRequired or ContentFailureKind.InvalidInput)
         { _authStore.Clear(); }
+        catch (ContentAccessException)
+        {
+            // Failed verification says nothing about the stored credentials' validity.
+            _accountRestorePending = true;
+            _accountRetryAt = DateTimeOffset.UtcNow.AddSeconds(30);
+        }
+        RenderAccount();
     }
 
     private void RenderAccount()
     {
         if (_closing) return;
         var account = _client.CurrentAccount();
-        AccountText.Text = account is null ? "未登录"
+        AccountText.Text = account is null ? _accountRestorePending ? "登录验证待重试" : "未登录"
             : BilibiliCookieText.Describe(account) + (account.IsVip ? " · 大会员" : "");
         LoginButton.Content = account is null ? "登录" : "退出登录";
     }
 
     private async void Login_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy || !_ready || _closing) return;
         if (_client.CurrentAccount() is not null)
         {
             // Leaving WallBili only: the all-site session stays valid for browsers and other devices.
             _authStore.Clear();
             await RunAsync(async ct =>
             {
+                _accountRestorePending = false;
                 await _client.SignOutAsync();
+                await SynchronizeRoamingAccountAsync(ct);
                 await ReloadCurrentForAccountAsync(ct);
             });
             RenderAccount();
             return;
         }
+        // The automatic restore must not race a login the user is completing in the dialog.
+        var restorePending = _accountRestorePending;
+        _accountRestorePending = false;
         var dialog = new LoginDialog(_client) { Owner = this };
         dialog.ShowDialog();
-        if (dialog.CookieResult is not { } cookie) return;
+        if (dialog.CookieResult is not { } cookie)
+        {
+            _accountRestorePending = restorePending;
+            RenderAccount();
+            return;
+        }
         _authStore.Save(cookie);
         RenderAccount();
-        await RunAsync(ReloadCurrentForAccountAsync, "登录成功，正在刷新可用画质…");
+        await RunAsync(async ct =>
+        {
+            await SynchronizeRoamingAccountAsync(ct);
+            await ReloadCurrentForAccountAsync(ct);
+        }, "登录成功，正在刷新可用画质…");
+        QueueRoamingTick();
     }
 
     /// <summary>After a login or logout the playing or paused current item is resolved again with the new
@@ -191,9 +224,18 @@ public partial class MainWindow : Window
             _outputRebindNeeded = false;
             await _library.RebindOutputAsync(ct);
         }
-        await _library.CheckpointAsync(ct);
         var immediate = _networkChanged;
         _networkChanged = false;
+        if (_accountRestorePending && (immediate || DateTimeOffset.UtcNow >= _accountRetryAt))
+        {
+            await RestoreAccountAsync(ct);
+            if (_client.CurrentAccount() is not null)
+            {
+                await SynchronizeRoamingAccountAsync(ct);
+                await ReloadCurrentForAccountAsync(ct);
+            }
+        }
+        await _library.CheckpointAsync(ct);
         if (_library.Snapshot.RecoveryPending) await _library.RetryRecoveryAsync(immediate, ct);
     });
 
@@ -206,6 +248,7 @@ public partial class MainWindow : Window
     private void DisplaySettingsChanged(object? sender, EventArgs e) => OnSystemChange(RefreshSettings);
     private void PowerModeChanged(object sender, PowerModeChangedEventArgs e) => OnSystemChange(() =>
     {
+        _roaming.ResetClock();
         if (e.Mode == PowerModes.Suspend) _powerSuspendRequested = true;
         if (e.Mode == PowerModes.Resume) _powerResumeRequested = true;
     });
@@ -297,17 +340,19 @@ public partial class MainWindow : Window
     private async void QueueDown_Click(object sender, RoutedEventArgs e) => await MoveQueueAsync(1);
     private async Task MoveQueueAsync(int offset)
     {
+        if (_library.Snapshot.Source == PlaybackSource.Roaming) return;
         if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.MoveQueueAsync(row.Id, offset, ct));
     }
     private async void RemoveQueue_Click(object sender, RoutedEventArgs e)
     {
+        if (_library.Snapshot.Source == PlaybackSource.Roaming) return;
         if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.RemoveQueueAsync(row.Id, ct));
     }
     private async void PlaySelected_Click(object sender, RoutedEventArgs e) => await PlaySelectedAsync();
     private async void Queue_DoubleClick(object sender, MouseButtonEventArgs e) => await PlaySelectedAsync();
     private async Task PlaySelectedAsync()
     {
-        if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.PlayAsync(row.Id, ct), "正在解析并播放…");
+        if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.PlayManualAsync(row.Id, ct), "正在解析并播放…");
     }
     private async void Play_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PlayAsync(token: ct));
     private async void Pause_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PauseAsync(ct));
@@ -329,6 +374,45 @@ public partial class MainWindow : Window
     }
     private void Sources_Changed(object sender, SelectionChangedEventArgs e) { if (!_rendering && _ready) Render(); }
 
+    private static bool Matches(CatalogEntry entry, string query) =>
+        entry.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        entry.Uploader.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+    // 左侧导航与分页容器是同一份状态：导航项的 Tag 即 ContentTabs 的页索引。
+    private void Nav_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string tag } || !int.TryParse(tag, out var index)) return;
+        if (ContentTabs is { } tabs && index >= 0 && index < tabs.Items.Count) tabs.SelectedIndex = index;
+        if (index == 2) VideoInput?.Focus();
+    }
+
+    private void Tabs_Changed(object sender, SelectionChangedEventArgs e) => RenderNav();
+
+    private void RenderNav()
+    {
+        if (ContentTabs is null) return;
+        var active = ContentTabs.SelectedIndex;
+        var activeStyle = TryFindResource("Btn.NavActive") as Style;
+        var idleStyle = TryFindResource("Btn.Nav") as Style;
+        foreach (var button in NavButtons())
+        {
+            // 「添加来源」只是跳转入口，不参与选中态。
+            var highlighted = button.Name != "NavAddSourceButton"
+                && button.Tag is string tag && int.TryParse(tag, out var target) && target == active;
+            var style = highlighted ? activeStyle : idleStyle;
+            if (style is not null) button.Style = style;
+        }
+    }
+
+    private IEnumerable<Button> NavButtons()
+    {
+        foreach (var panel in new[] { NavPanel, NavPanelSecondary })
+        {
+            if (panel is null) continue;
+            foreach (var child in panel.Children) if (child is Button button) yield return button;
+        }
+    }
+
     private void Render()
     {
         if (_closing) return;
@@ -343,14 +427,23 @@ public partial class MainWindow : Window
                 .Concat(snapshot.Sources.Select(s => new SourceRow(s.Id, $"{s.Title}（{s.Members.Count}）"))).ToArray();
             SourcesBox.SelectedItem = SourcesBox.Items.Cast<SourceRow>().FirstOrDefault(s => s.Id == selectedSource) ?? SourcesBox.Items[0];
             var source = snapshot.Sources.FirstOrDefault(s => s.Id == (SourcesBox.SelectedItem as SourceRow)?.Id);
-            CatalogGrid.ItemsSource = snapshot.Entries.Where(e => source is null || source.Members.Contains(e.Key))
+            // 顶栏筛选只在片库与队列的渲染里生效，空关键字等同于不过滤。
+            var query = SearchBox?.Text?.Trim() ?? "";
+            CatalogGrid.ItemsSource = snapshot.Entries
+                .Where(e => source is null || source.Members.Contains(e.Key))
+                .Where(e => query.Length == 0 || Matches(e, query))
                 .Select(e => new EntryRow(e, Availability(e))).ToArray();
             foreach (var row in CatalogGrid.Items.Cast<EntryRow>()) if (selectedEntries.Contains(row.Entry.Key)) CatalogGrid.SelectedItems.Add(row);
             var entries = snapshot.Entries.ToDictionary(e => e.Key);
-            QueueGrid.ItemsSource = snapshot.Queue.Select(q => new QueueRow(q.Id,
-                q.Id == snapshot.Playback.CurrentId ? "▶" : "", entries[q.Key].Title, Availability(entries[q.Key]))).ToArray();
-            QueueGrid.SelectedItem = QueueGrid.Items.Cast<QueueRow>().FirstOrDefault(q => q.Id == selectedQueue);
-            QueueTitle.Text = $"播放队列（{snapshot.Queue.Count}）";
+            var manualQueue = snapshot.ManualQueue ?? snapshot.Queue;
+            var manualPlayback = snapshot.ManualPlayback ?? snapshot.Playback;
+            var queueRows = manualQueue.Select(q => new QueueRow(q.Id,
+                q.Id == manualPlayback.CurrentId ? "▶" : "", entries[q.Key].Title, Availability(entries[q.Key]))).ToArray();
+            QueueGrid.ItemsSource = queueRows;
+            QueueGrid.SelectedItem = queueRows.FirstOrDefault(q => q.Id == selectedQueue);
+            QueueTitle.Text = $"手动队列（{manualQueue.Count}）";
+            // 「接下来播放」是队列的预览，跳过正在播放的那一项。
+            if (UpcomingBox is not null) UpcomingBox.ItemsSource = queueRows.Where(r => r.Marker.Length == 0).Take(6).ToArray();
             var intent = snapshot.Playback.Intent switch { PlaybackIntent.Playing => "播放中", PlaybackIntent.Paused => "已暂停", _ => "已停止" };
             CurrentText.Text = snapshot.Current is { } current ? $"{intent} · {current.Title}" : "尚未选择播放项";
             var duration = snapshot.Current?.Duration ?? TimeSpan.Zero;
@@ -361,6 +454,7 @@ public partial class MainWindow : Window
             ModeBox.SelectedIndex = snapshot.Playback.Mode == QueueMode.Sequential ? 0 : 1;
             StatusText.Text = snapshot.Notice;
             RenderQuality(snapshot);
+            RenderRoaming();
             _tray.SetStatus(snapshot.Current?.Title ?? intent);
             RefreshDesktop();
         }
@@ -421,9 +515,11 @@ public partial class MainWindow : Window
         await RunAsync(ct => _library.SetMediaSelectionAsync(selection, ct));
     }
 
-    private MediaSelectionPreferences ToSelection(DesktopPreferences? preferences = null) => new(
-        (VideoQualityBox?.SelectedItem as QualityRow)?.Id ?? preferences?.PreferredVideoQualityId,
-        (AudioQualityBox?.SelectedItem as QualityRow)?.Id ?? preferences?.PreferredAudioQualityId);
+    // Saved preferences must not read the controls: SelectionChanged already contains the new values.
+    // A selected automatic row has a null id and must remain null instead of reviving a saved tier.
+    private MediaSelectionPreferences ToSelection(DesktopPreferences? preferences = null) => preferences is { } saved
+        ? new(saved.PreferredVideoQualityId, saved.PreferredAudioQualityId)
+        : new((VideoQualityBox?.SelectedItem as QualityRow)?.Id, (AudioQualityBox?.SelectedItem as QualityRow)?.Id);
 
     private async Task RunAsync(Func<CancellationToken, Task> operation, string? notice = null, bool initializing = false)
     {
@@ -431,6 +527,7 @@ public partial class MainWindow : Window
         _busy = true;
         Volatile.Write(ref _mpvPath, string.IsNullOrWhiteSpace(MpvPathInput.Text) ? "mpv" : MpvPathInput.Text.Trim());
         ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = DesktopPanel.IsEnabled = false;
+        LoginButton.IsEnabled = false;
         if (notice is not null) StatusText.Text = notice;
         try
         {
@@ -460,6 +557,8 @@ public partial class MainWindow : Window
             _busy = false;
             _ready = _library.IsInitialized;
             ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = DesktopPanel.IsEnabled = _ready && !_closing;
+            LoginButton.IsEnabled = _ready && !_closing;
+            RenderRoaming();
         }
     }
 
@@ -491,6 +590,8 @@ public partial class MainWindow : Window
         try
         {
             try { await _pending; } catch { }
+            await _roaming.DisposeAsync();
+            try { await Task.WhenAll(_roamingOperations.ToArray()); } catch { }
             await _library.DisposeAsync();
         }
         catch
