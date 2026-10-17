@@ -663,6 +663,14 @@ public partial class MainWindow : Window
                     e.Availability == EntryAvailability.Failed))
                 .ToArray();
             foreach (var row in CatalogGrid.Items.Cast<EntryRow>()) if (selectedEntries.Contains(row.Entry.Key)) CatalogGrid.SelectedItems.Add(row);
+            // 空片库时用状态块替代表格（设计稿画板 06 · 03）。
+            if (CatalogEmptyPanel is not null)
+            {
+                var empty = snapshot.Entries.Count == 0;
+                CatalogEmptyPanel.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+                CatalogGrid.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+                CatalogHeaderRow.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+            }
             RenderSelectionBar();
             var manualQueue = snapshot.ManualQueue ?? snapshot.Queue;
             var manualPlayback = snapshot.ManualPlayback ?? snapshot.Playback;

@@ -318,6 +318,30 @@ public sealed class DesktopRegressionTests
     public Task DesignScreenshotsOfEveryPage() => OnSta(async () =>
     {
         using var f = new WindowFixture();
+        var directory = Environment.GetEnvironmentVariable("WALLBILI_UI_ARTIFACT_DIR") ??
+            Path.Combine(Path.GetTempPath(), "wallbili-design-review");
+
+        // 先捕获「片库还是空的」状态（设计稿画板 06 · 03），再灌入示例内容。
+        using (var blank = new WindowFixture())
+        {
+            await blank.Library.InitializeAsync(Token);
+            Set(blank.Window, "_ready", true);
+            var blankHost = LoadVisibleFixture(blank.Window);
+            try
+            {
+                Call(blank.Window, "Render");
+                var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                blankHost.Loaded += (_, _) => ready.TrySetResult();
+                blankHost.Show();
+                await ready.Task.WaitAsync(TimeSpan.FromSeconds(5), Token);
+                var blankTabs = blank.Window.ContentTabs;
+                SelectTab((TabItem)blankTabs.Items[1]);
+                await WaitForLayoutAsync(blankHost, () => ((TabItem)blankTabs.Items[1]).IsSelected);
+                Capture(blankHost, directory, "design-00-empty-library.png");
+            }
+            finally { blankHost.Close(); }
+        }
+
         await f.Library.InitializeAsync(Token);
         var state = (LibraryState)Get(f.Library, "_state")!;
         // 与设计稿示例一致的内容，方便逐画面比对。
@@ -366,8 +390,6 @@ public sealed class DesktopRegressionTests
         await f.Library.PlayAsync(token: Token);
         Set(f.Window, "_ready", true);
 
-        var directory = Environment.GetEnvironmentVariable("WALLBILI_UI_ARTIFACT_DIR") ??
-            Path.Combine(Path.GetTempPath(), "wallbili-design-review");
         var host = LoadVisibleFixture(f.Window);
         try
         {

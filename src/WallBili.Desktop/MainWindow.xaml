@@ -607,7 +607,7 @@
                                 <RowDefinition Height="1" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
+                            <Grid x:Name="CatalogHeaderRow" Grid.Row="0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="14" />
                                     <ColumnDefinition Width="40" />
@@ -704,6 +704,21 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+
+                            <!-- 空片库状态（设计稿画板 06 · 03） -->
+                            <Grid x:Name="CatalogEmptyPanel" Grid.Row="2" Visibility="Collapsed">
+                                <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
+                                    <Path Style="{DynamicResource Icon}" Data="{DynamicResource Icon.PlusBig}"
+                                          Stroke="{DynamicResource Ink500}" Width="18" Height="18"
+                                          HorizontalAlignment="Left" />
+                                    <TextBlock Style="{DynamicResource Text.StateTitle}" Text="添加第一个来源"
+                                               Margin="0,26,0,0" />
+                                    <TextBlock Style="{DynamicResource Text.Muted}"
+                                               Text="粘贴一个公开视频或合集链接，开始导入。" Margin="0,15,0,0" />
+                                    <Button Style="{DynamicResource Btn.Ghost}" Width="140" Content="添加来源"
+                                            HorizontalAlignment="Left" Margin="0,30,0,0" Click="OpenImport_Click" />
+                                </StackPanel>
+                            </Grid>
                         </Grid>
 
                         <!-- 多选操作条 -->
