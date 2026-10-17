@@ -7,6 +7,7 @@ using System.Net.NetworkInformation;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Microsoft.Data.Sqlite;
@@ -40,6 +41,9 @@ public partial class MainWindow : Window
     private DateTimeOffset _accountRetryAt;
     private string _mpvPath;
     private readonly string _preferencesPath;
+    // 界面状态：导入弹窗当前页、片库排序方式、滑块回写与用户拖动标记
+    private int _importTab = 1;
+    private bool _catalogBySource, _settingVolume, _settingMode, _seeking;
 
     public MainWindow()
     {
@@ -65,8 +69,22 @@ public partial class MainWindow : Window
         RefreshSettings();
         RefreshDesktop();
         RenderAccount();
-        // 顶栏筛选：TextChanged 不能写在 XAML 里（XAML 需要能脱离处理器单独解析），所以在这里挂。
+        // 独立解析约束：XAML 里只能出现 Click / SelectionChanged / MouseDoubleClick，其余事件在这里挂。
         SearchBox.TextChanged += (_, _) => { if (_ready) Render(); };
+        TitleBar.MouseLeftButtonDown += (_, e) =>
+        {
+            if (e.ClickCount == 2) { ToggleMaximize(); return; }
+            if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+        };
+        WallpaperBox.Checked += DesktopOptionToggled;
+        WallpaperBox.Unchecked += DesktopOptionToggled;
+        VolumeSlider.ValueChanged += VolumeChanged;
+        Progress.PreviewMouseLeftButtonDown += (_, _) => _seeking = true;
+        Progress.PreviewMouseLeftButtonUp += async (_, _) => await SeekFromAsync(Progress);
+        BarProgress.PreviewMouseLeftButtonDown += (_, _) => _seeking = true;
+        BarProgress.PreviewMouseLeftButtonUp += async (_, _) => await SeekFromAsync(BarProgress);
+        SetImportTab(_importTab);
+        SetCatalogTab(false);
         SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
         SystemEvents.PowerModeChanged += PowerModeChanged;
         NetworkChange.NetworkAvailabilityChanged += NetworkAvailabilityChanged;
@@ -89,9 +107,9 @@ public partial class MainWindow : Window
             await _library.InitializeAsync(ct);
             await SynchronizeRoamingAccountAsync(ct);
             if (!_host.Attached && !_preferences.ContinueAudioWhenHidden) await _library.PauseAsync(ct);
-            _ready = true; VolumeSlider.Value = _library.Snapshot.Playback.Volume;
+            _ready = true; SetVolumeSlider(_library.Snapshot.Playback.Volume);
         }, initializing: true);
-        if (_ready) VolumeSlider.Value = _library.Snapshot.Playback.Volume;
+        if (_ready) SetVolumeSlider(_library.Snapshot.Playback.Volume);
         _timer.Start();
         QueueRoamingTick();
     }
@@ -177,7 +195,8 @@ public partial class MainWindow : Window
         {
             WallpaperBox.IsChecked = _preferences.WallpaperEnabled;
             ContinueAudioBox.IsChecked = _preferences.ContinueAudioWhenHidden;
-            FitBox.SelectedIndex = _preferences.FillWindow ? 0 : 1;
+            FitFillRadio.IsChecked = _preferences.FillWindow;
+            FitLetterRadio.IsChecked = !_preferences.FillWindow;
             DisplayBox.ItemsSource = new[] { new DisplayTarget("", 0, 0, 0, 0, false) }
                 .Concat(DesktopVideoHost.GetDisplays()).ToArray();
             DisplayBox.SelectedItem = DisplayBox.Items.Cast<DisplayTarget>().FirstOrDefault(d => d.Id == _preferences.DisplayId)
@@ -246,7 +265,7 @@ public partial class MainWindow : Window
         if (_ready && !_busy) _ = MaintainAsync();
     });
     private void DisplaySettingsChanged(object? sender, EventArgs e) => OnSystemChange(RefreshSettings);
-    private void PowerModeChanged(object sender, PowerModeChangedEventArgs e) => OnSystemChange(() =>
+    private void PowerModeChanged(object? sender, PowerModeChangedEventArgs e) => OnSystemChange(() =>
     {
         _roaming.ResetClock();
         if (e.Mode == PowerModes.Suspend) _powerSuspendRequested = true;
@@ -265,7 +284,7 @@ public partial class MainWindow : Window
             WallpaperEnabled = WallpaperBox.IsChecked == true,
             ContinueAudioWhenHidden = ContinueAudioBox.IsChecked == true,
             DisplayId = (DisplayBox.SelectedItem as DisplayTarget)?.Id,
-            FillWindow = FitBox.SelectedIndex == 0
+            FillWindow = FitFillRadio.IsChecked == true
         };
         updated.Save(_preferencesPath);
         _preferences = updated;
@@ -275,19 +294,89 @@ public partial class MainWindow : Window
         if (!_host.Attached && !updated.ContinueAudioWhenHidden) await _library.PauseAsync(ct);
     });
 
+    private void DesktopOptionToggled(object sender, RoutedEventArgs e)
+    {
+        if (_rendering || !_ready || _busy || _closing) return;
+        ApplyDesktop_Click(this, new RoutedEventArgs());
+    }
+
     private void ShowControls() { Show(); WindowState = WindowState.Normal; Activate(); }
     private void Hide_Click(object sender, RoutedEventArgs e) => Hide();
     private void Exit_Click(object sender, RoutedEventArgs e) => RequestExit();
     private void RequestExit() { _exitRequested = true; Close(); }
     internal void ExitForSession() => RequestExit();
+    private void WindowMin_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+    private void WindowMax_Click(object sender, RoutedEventArgs e) => ToggleMaximize();
+    private void WindowClose_Click(object sender, RoutedEventArgs e) => Close();
+    private void ToggleMaximize() => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     private async void TogglePause() => await RunAsync(ct => _library.Snapshot.Playback.Intent == PlaybackIntent.Playing
         ? _library.PauseAsync(ct) : _library.PlayAsync(token: ct));
     private void ToggleWallpaper()
     {
         if (_busy || !_ready) return;
-        WallpaperBox.IsChecked = !_preferences.WallpaperEnabled;
-        ApplyDesktop_Click(this, new());
+        WallpaperBox.IsChecked = !_preferences.WallpaperEnabled; // 勾选变化会应用设置
     }
+    private void ToggleWallpaper_Click(object sender, RoutedEventArgs e) => ToggleWallpaper();
+
+    // ---------- 添加来源：设计与代码共用一份表单，三种导入方式由当前页签决定 ----------
+    private void OpenImport_Click(object sender, RoutedEventArgs e)
+    {
+        OpenImport();
+        FocusImportInput();
+    }
+    private void OpenImport()
+    {
+        AddSourceOverlay.Visibility = Visibility.Visible;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => SetImportTab(_importTab));
+    }
+    private void CloseImport_Click(object sender, RoutedEventArgs e) =>
+        AddSourceOverlay.Visibility = Visibility.Collapsed;
+    private void ImportTabVideo_Click(object sender, RoutedEventArgs e) { SetImportTab(0); FocusImportInput(); }
+    private void ImportTabCollection_Click(object sender, RoutedEventArgs e) { SetImportTab(1); FocusImportInput(); }
+    private void ImportTabIds_Click(object sender, RoutedEventArgs e) { SetImportTab(2); FocusImportInput(); }
+    private void FocusImportInput() => Dispatcher.BeginInvoke(DispatcherPriority.Input, () => _ = _importTab switch
+    {
+        0 => VideoInput.Focus(),
+        1 => CollectionInput.Focus(),
+        _ => UploaderInput.Focus()
+    });
+
+    /// <summary>页签样式：当前页为深色粗体，下划线跟着当前页签的实际宽度走。</summary>
+    private void SetImportTab(int index)
+    {
+        _importTab = index;
+        ImportVideoPanel.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ImportCollectionPanel.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
+        ImportIdsPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
+        var idle = TryFindResource("Ink500") as Brush;
+        var active = TryFindResource("Ink900") as Brush;
+        if (idle is not null && active is not null)
+        {
+            foreach (var (text, current) in new[] { (ImportTabVideoText, index == 0), (ImportTabCollectionText, index == 1), (ImportTabIdsText, index == 2) })
+            {
+                text.Foreground = current ? active : idle;
+                text.FontWeight = current ? FontWeights.Bold : FontWeights.Normal;
+            }
+        }
+        if (ImportTabsPanel.Children.Count > index && ImportTabsPanel.Children[index] is Button tab && tab.ActualWidth > 0)
+        {
+            ImportTabUnderline.Width = tab.ActualWidth;
+            ImportTabUnderline.Margin = new Thickness(
+                tab.TransformToAncestor(ImportTabsPanel).Transform(new Point(0, 0)).X, 0, 0, 0);
+        }
+    }
+
+    private void ImportPrimary_Click(object sender, RoutedEventArgs e)
+    {
+        var args = new RoutedEventArgs();
+        switch (_importTab)
+        {
+            case 0: ImportVideo_Click(this, args); break;
+            case 2: ImportIds_Click(this, args); break;
+            default: ImportCollection_Click(this, args); break;
+        }
+    }
+
     private async void ImportVideo_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(ct => _library.ImportVideoAsync(VideoInput.Text.Trim(), ct), "正在导入视频及分 P…");
     private async void ImportCollection_Click(object sender, RoutedEventArgs e) =>
@@ -298,18 +387,39 @@ public partial class MainWindow : Window
             !long.TryParse(CollectionIdInput.Text, out var id) || id <= 0) throw new ArgumentException();
         return _library.ImportCollectionAsync(new(uid, id, KindBox.SelectedIndex == 0 ? CollectionKind.Season : CollectionKind.Series), ct);
     }, "正在读取合集全部分页与分 P…");
+
+    // ---------- 片库 ----------
     private async void RefreshSource_Click(object sender, RoutedEventArgs e)
     {
         if (SourcesBox.SelectedItem is SourceRow { Id.Length: > 0 } source)
             await RunAsync(ct => _library.RefreshSourceAsync(source.Id, ct), "正在刷新来源，播放将继续…");
+    }
+    private async void RefreshSourceRow_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not WorkbenchSourceRow { Id.Length: > 0 } row) return;
+        await RunAsync(ct => _library.RefreshSourceAsync(row.Id, ct), "正在刷新来源，播放将继续…");
     }
     private async void RemoveSource_Click(object sender, RoutedEventArgs e)
     {
         if (SourcesBox.SelectedItem is SourceRow { Id.Length: > 0 } source)
             await RunAsync(ct => _library.RemoveSourceAsync(source.Id, ct));
     }
+    private async void EnqueueSource_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not WorkbenchSourceRow { Id.Length: > 0 } row) return;
+        var source = _library.Snapshot.Sources.FirstOrDefault(s => s.Id == row.Id);
+        if (source is null) return;
+        var keys = _library.Snapshot.Entries.Where(entry => source.Members.Contains(entry.Key)).Select(entry => entry.Key).ToArray();
+        await RunAsync(ct => _library.EnqueueAsync(keys, ct));
+    }
     private async void Enqueue_Click(object sender, RoutedEventArgs e)
     {
+        // 行内按钮带自己的条目；工具栏按钮作用于当前多选。
+        if ((sender as FrameworkElement)?.DataContext is EntryRow single)
+        {
+            await RunAsync(ct => _library.EnqueueAsync([single.Entry.Key], ct));
+            return;
+        }
         var selected = CatalogGrid.SelectedItems.Cast<EntryRow>().Select(row => row.Entry.Key).ToHashSet();
         var keys = CatalogGrid.Items.Cast<EntryRow>().Where(row => selected.Contains(row.Entry.Key)).Select(row => row.Entry.Key).ToArray();
         await RunAsync(ct => _library.EnqueueAsync(keys, ct));
@@ -324,6 +434,19 @@ public partial class MainWindow : Window
         var keys = CatalogGrid.SelectedItems.Cast<EntryRow>().Select(row => row.Entry.Key).ToArray();
         await RunAsync(async ct => { foreach (var key in keys) await _library.RemoveEntryAsync(key, ct); });
     }
+    private void UnselectAll_Click(object sender, RoutedEventArgs e)
+    {
+        CatalogGrid.UnselectAll();
+        RenderSelectionBar();
+    }
+    private void Catalog_SelectionChanged(object sender, SelectionChangedEventArgs e) => RenderSelectionBar();
+    private void RenderSelectionBar()
+    {
+        if (SelectionBar is null) return;
+        var count = CatalogGrid.SelectedItems.Count;
+        SelectionBar.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SelectionCountText.Text = $"已选择 {count} 项";
+    }
     private async void EntryUp_Click(object sender, RoutedEventArgs e) => await MoveEntryAsync(-1);
     private async void EntryDown_Click(object sender, RoutedEventArgs e) => await MoveEntryAsync(1);
     private async Task MoveEntryAsync(int offset)
@@ -336,6 +459,38 @@ public partial class MainWindow : Window
         var delta = all.FindIndex(e => e.Key == visible[target].Entry.Key) - all.FindIndex(e => e.Key == row.Entry.Key);
         await RunAsync(ct => _library.MoveEntryAsync(row.Entry.Key, delta, ct));
     }
+    private void CatalogTabAll_Click(object sender, RoutedEventArgs e) => SetCatalogTab(false);
+    private void CatalogTabSource_Click(object sender, RoutedEventArgs e) => SetCatalogTab(true);
+    private void CatalogStatus_Changed(object sender, SelectionChangedEventArgs e) { if (!_rendering && _ready) Render(); }
+
+    /// <summary>两个视图页签只切换排序方式：全部视频按导入顺序，按来源按来源聚拢。</summary>
+    private void SetCatalogTab(bool bySource)
+    {
+        _catalogBySource = bySource;
+        var idle = TryFindResource("Ink500") as Brush;
+        var active = TryFindResource("Ink900") as Brush;
+        if (idle is not null && active is not null)
+        {
+            CatalogTabAllText.Foreground = bySource ? idle : active;
+            CatalogTabSourceText.Foreground = bySource ? active : idle;
+        }
+        CatalogTabAllText.FontWeight = bySource ? FontWeights.Normal : FontWeights.Bold;
+        CatalogTabSourceText.FontWeight = bySource ? FontWeights.Bold : FontWeights.Normal;
+        if (CatalogTabUnderline is not null)
+        {
+            CatalogTabUnderline.Width = bySource ? 59 : 83;
+            CatalogTabUnderline.Margin = new Thickness(bySource ? 132 : 0, 0, 0, 0);
+        }
+    }
+
+    private void RailSources_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_rendering || !_ready || SourcesBox is null) return;
+        if (RailSources.SelectedItem is not SourceRow row) return;
+        SourcesBox.SelectedItem = SourcesBox.Items.Cast<SourceRow>().FirstOrDefault(s => s.Id == row.Id);
+    }
+
+    // ---------- 播放队列 ----------
     private async void QueueUp_Click(object sender, RoutedEventArgs e) => await MoveQueueAsync(-1);
     private async void QueueDown_Click(object sender, RoutedEventArgs e) => await MoveQueueAsync(1);
     private async Task MoveQueueAsync(int offset)
@@ -346,7 +501,15 @@ public partial class MainWindow : Window
     private async void RemoveQueue_Click(object sender, RoutedEventArgs e)
     {
         if (_library.Snapshot.Source == PlaybackSource.Roaming) return;
-        if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.RemoveQueueAsync(row.Id, ct));
+        // 行内「更多」按钮带自己的条目；工具栏按钮作用于当前选择。
+        var row = (sender as FrameworkElement)?.DataContext as QueueRow ?? QueueGrid.SelectedItem as QueueRow;
+        if (row is not null) await RunAsync(ct => _library.RemoveQueueAsync(row.Id, ct));
+    }
+    private void Queue_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_library is null || _library.Snapshot.Source == PlaybackSource.Roaming) return;
+        var has = QueueGrid.SelectedItem is not null;
+        QueueUpButton.IsEnabled = QueueDownButton.IsEnabled = RemoveQueueButton.IsEnabled = has && !_busy;
     }
     private async void PlaySelected_Click(object sender, RoutedEventArgs e) => await PlaySelectedAsync();
     private async void Queue_DoubleClick(object sender, MouseButtonEventArgs e) => await PlaySelectedAsync();
@@ -354,36 +517,76 @@ public partial class MainWindow : Window
     {
         if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.PlayManualAsync(row.Id, ct), "正在解析并播放…");
     }
+
+    // ---------- 播放控制 ----------
+    private async void Media_Click(object sender, RoutedEventArgs e) => await RunAsync(ct =>
+        _library.Snapshot.Playback.Intent == PlaybackIntent.Playing ? _library.PauseAsync(ct) : _library.PlayAsync(token: ct));
     private async void Play_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PlayAsync(token: ct));
     private async void Pause_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PauseAsync(ct));
     private async void Stop_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.StopAsync(ct));
     private async void Previous_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PreviousAsync(ct));
     private async void Next_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.NextAsync(ct));
     private async void Reload_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.ReloadAsync(ct));
-    private async void Seek_Click(object sender, RoutedEventArgs e) => await RunAsync(ct =>
+
+    /// <summary>进度条松手才跳转：回写进度时不会触发跳转，拖动过程中也不会反复请求。</summary>
+    private async Task SeekFromAsync(Slider slider)
     {
-        if (!double.TryParse(SeekInput.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) ||
-            !double.IsFinite(seconds) || seconds < 0 || seconds > TimeSpan.MaxValue.TotalSeconds) throw new ArgumentException();
-        return _library.SeekAsync(TimeSpan.FromSeconds(seconds), ct);
-    });
-    private async void Volume_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.SetVolumeAsync(VolumeSlider.Value, ct));
+        if (!_seeking) return;
+        _seeking = false;
+        if (!_ready || _busy || _closing) return;
+        var seconds = slider.Value;
+        if (!double.IsFinite(seconds) || seconds < 0 || seconds > TimeSpan.MaxValue.TotalSeconds) return;
+        await RunAsync(ct => _library.SeekAsync(TimeSpan.FromSeconds(seconds), ct));
+    }
+
+    private void SetVolumeSlider(double volume)
+    {
+        _settingVolume = true;
+        try { VolumeSlider.Value = Math.Clamp(volume, VolumeSlider.Minimum, VolumeSlider.Maximum); }
+        finally { _settingVolume = false; }
+        RenderVolume(volume);
+    }
+
+    private void RenderVolume(double volume)
+    {
+        if (HeroVolumeText is not null) HeroVolumeText.Text = $"音量 {volume:0}%";
+        if (BarVolumeText is not null) BarVolumeText.Text = $"{volume:0}";
+    }
+
+    private async void VolumeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        RenderVolume(e.NewValue);
+        if (_settingVolume || _rendering || !_ready || _busy || _closing) return;
+        var volume = e.NewValue;
+        await RunAsync(ct => _library.SetVolumeAsync(volume, ct));
+    }
+
     private async void Mode_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (_rendering || !_ready) return;
-        await RunAsync(ct => _library.SetModeAsync(ModeBox.SelectedIndex == 0 ? QueueMode.Sequential : QueueMode.RepeatAll, ct));
+        if (_rendering || _settingMode || !_ready || _closing) return;
+        var index = ((ComboBox)sender).SelectedIndex;
+        _settingMode = true;
+        try
+        {
+            if (!ReferenceEquals(sender, ModeBox) && ModeBox is not null) ModeBox.SelectedIndex = index;
+            if (!ReferenceEquals(sender, ModeBoxHome) && ModeBoxHome is not null) ModeBoxHome.SelectedIndex = index;
+        }
+        finally { _settingMode = false; }
+        await RunAsync(ct => _library.SetModeAsync(index == 1 ? QueueMode.Sequential : QueueMode.RepeatAll, ct));
     }
+    private void ModeHome_Changed(object sender, SelectionChangedEventArgs e) => Mode_Changed(sender, e);
     private void Sources_Changed(object sender, SelectionChangedEventArgs e) { if (!_rendering && _ready) Render(); }
 
     private static bool Matches(CatalogEntry entry, string query) =>
         entry.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
         entry.Uploader.Contains(query, StringComparison.OrdinalIgnoreCase);
 
-    // 左侧导航与分页容器是同一份状态：导航项的 Tag 即 ContentTabs 的页索引。
+    // 左侧导航与分页容器是同一份状态：导航项的 Tag 即 ContentTabs 的页索引，5 是添加来源弹窗。
     private void Nav_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: string tag } || !int.TryParse(tag, out var index)) return;
+        if (index == 5) { OpenImport(); FocusImportInput(); return; }
         if (ContentTabs is { } tabs && index >= 0 && index < tabs.Items.Count) tabs.SelectedIndex = index;
-        if (index == 2) VideoInput?.Focus();
     }
 
     private void Tabs_Changed(object sender, SelectionChangedEventArgs e) => RenderNav();
@@ -423,35 +626,105 @@ public partial class MainWindow : Window
             var selectedSource = (SourcesBox.SelectedItem as SourceRow)?.Id ?? "";
             var selectedEntries = CatalogGrid.SelectedItems.Cast<EntryRow>().Select(r => r.Entry.Key).ToHashSet();
             var selectedQueue = (QueueGrid.SelectedItem as QueueRow)?.Id;
-            SourcesBox.ItemsSource = new[] { new SourceRow("", $"全部视频（{snapshot.Entries.Count}）") }
-                .Concat(snapshot.Sources.Select(s => new SourceRow(s.Id, $"{s.Title}（{s.Members.Count}）"))).ToArray();
-            SourcesBox.SelectedItem = SourcesBox.Items.Cast<SourceRow>().FirstOrDefault(s => s.Id == selectedSource) ?? SourcesBox.Items[0];
+            var entries = snapshot.Entries.ToDictionary(e => e.Key);
+            string SourceTitle(ContentKey key) => snapshot.Sources.FirstOrDefault(s => s.Members.Contains(key))?.Title ?? "";
+            var sourceRows = new[] { new SourceRow("", "全部来源", snapshot.Entries.Count) }
+                .Concat(snapshot.Sources.Select(s => new SourceRow(s.Id, s.Title, s.Members.Count))).ToArray();
+            SourcesBox.ItemsSource = sourceRows;
+            SourcesBox.SelectedItem = sourceRows.FirstOrDefault(s => s.Id == selectedSource) ?? sourceRows[0];
+            // 侧栏只列来源本身，「全部来源」由片库的下拉提供（与设计稿一致）。
+            if (RailSources is not null)
+            {
+                var railRows = sourceRows.Where(row => row.Id.Length > 0).ToArray();
+                RailSources.ItemsSource = railRows;
+                RailSources.SelectedItem = railRows.FirstOrDefault(row => row.Id == selectedSource);
+            }
             var source = snapshot.Sources.FirstOrDefault(s => s.Id == (SourcesBox.SelectedItem as SourceRow)?.Id);
             // 顶栏筛选只在片库与队列的渲染里生效，空关键字等同于不过滤。
             var query = SearchBox?.Text?.Trim() ?? "";
-            CatalogGrid.ItemsSource = snapshot.Entries
+            var statusFilter = CatalogStatusBox?.SelectedIndex ?? 0;
+            bool StatusMatches(CatalogEntry entry) => statusFilter switch
+            {
+                1 => entry.Availability == EntryAvailability.Available,
+                2 => entry.Availability == EntryAvailability.Unknown,
+                3 => entry.Availability == EntryAvailability.Failed,
+                _ => true
+            };
+            var current = snapshot.Current;
+            var visibleEntries = snapshot.Entries
                 .Where(e => source is null || source.Members.Contains(e.Key))
                 .Where(e => query.Length == 0 || Matches(e, query))
-                .Select(e => new EntryRow(e, Availability(e))).ToArray();
+                .Where(StatusMatches);
+            if (_catalogBySource) visibleEntries = visibleEntries.OrderBy(e => SourceTitle(e.Key), StringComparer.CurrentCulture).ThenBy(e => e.Title, StringComparer.CurrentCulture);
+            CatalogGrid.ItemsSource = visibleEntries
+                .Select((e, i) => new EntryRow(e, e.Key == current?.Key ? "播放中" : Availability(e),
+                    (i + 1).ToString("00", CultureInfo.InvariantCulture),
+                    SourceTitle(e.Key), Format(e.Duration), e.Key == current?.Key,
+                    e.Availability == EntryAvailability.Failed))
+                .ToArray();
             foreach (var row in CatalogGrid.Items.Cast<EntryRow>()) if (selectedEntries.Contains(row.Entry.Key)) CatalogGrid.SelectedItems.Add(row);
-            var entries = snapshot.Entries.ToDictionary(e => e.Key);
+            RenderSelectionBar();
             var manualQueue = snapshot.ManualQueue ?? snapshot.Queue;
             var manualPlayback = snapshot.ManualPlayback ?? snapshot.Playback;
-            var queueRows = manualQueue.Select(q => new QueueRow(q.Id,
-                q.Id == manualPlayback.CurrentId ? "▶" : "", entries[q.Key].Title, Availability(entries[q.Key]))).ToArray();
+            var queueRows = manualQueue.Select((q, i) => new QueueRow(q.Id, (i + 1).ToString("00", CultureInfo.InvariantCulture),
+                entries[q.Key].Title, entries[q.Key].Uploader, SourceTitle(q.Key), Format(entries[q.Key].Duration),
+                q.Id == manualPlayback.CurrentId ? "播放中" : "待播放", q.Id == manualPlayback.CurrentId,
+                q.Id == manualPlayback.CurrentId ? "▶" : "")).ToArray();
             QueueGrid.ItemsSource = queueRows;
             QueueGrid.SelectedItem = queueRows.FirstOrDefault(q => q.Id == selectedQueue);
-            QueueTitle.Text = $"手动队列（{manualQueue.Count}）";
+            QueueTitle.Text = $"共 {manualQueue.Count} 项 · 双击条目切换播放，队列顺序会自动保存。";
             // 「接下来播放」是队列的预览，跳过正在播放的那一项。
-            if (UpcomingBox is not null) UpcomingBox.ItemsSource = queueRows.Where(r => r.Marker.Length == 0).Take(6).ToArray();
+            if (UpcomingBox is not null) UpcomingBox.ItemsSource = queueRows.Where(r => r.Marker.Length == 0).Take(3).ToArray();
+            if (UpcomingAllText is not null) UpcomingAllText.Text = $"全部 {manualQueue.Count} 项 →";
+            if (QueueNavCount is not null) QueueNavCount.Text = manualQueue.Count.ToString(CultureInfo.InvariantCulture);
+            // 「正在播放」卡片与播放条
+            var nowRow = queueRows.FirstOrDefault(r => r.Playing);
+            if (QueueNowTitleText is not null) QueueNowTitleText.Text = nowRow?.Title ?? "尚未选择播放项";
             var intent = snapshot.Playback.Intent switch { PlaybackIntent.Playing => "播放中", PlaybackIntent.Paused => "已暂停", _ => "已停止" };
-            CurrentText.Text = snapshot.Current is { } current ? $"{intent} · {current.Title}" : "尚未选择播放项";
+            CurrentText.Text = snapshot.Current is { } playing ? playing.Title : "尚未选择播放项";
+            if (HeroStateText is not null) HeroStateText.Text = intent;
+            if (PlaybackIntentText is not null) PlaybackIntentText.Text = snapshot.Playback.Intent switch
+            {
+                PlaybackIntent.Playing => "音乐播放中", PlaybackIntent.Paused => "已暂停", _ => "未在播放"
+            };
             var duration = snapshot.Current?.Duration ?? TimeSpan.Zero;
             var position = TimeSpan.FromSeconds(snapshot.Playback.PositionSeconds);
-            PositionText.Text = $"{Format(position)} / {Format(duration)}";
+            PositionText.Text = Format(position);
+            if (DurationText is not null) DurationText.Text = "/ " + Format(duration);
+            if (BarPositionText is not null) BarPositionText.Text = Format(position);
+            if (BarDurationText is not null) BarDurationText.Text = Format(duration);
             Progress.Maximum = Math.Max(1, duration.TotalSeconds);
             Progress.Value = Math.Clamp(position.TotalSeconds, 0, Progress.Maximum);
-            ModeBox.SelectedIndex = snapshot.Playback.Mode == QueueMode.Sequential ? 0 : 1;
+            if (BarProgress is not null)
+            {
+                BarProgress.Maximum = Progress.Maximum;
+                BarProgress.Value = Progress.Value;
+            }
+            if (QueueNowTimeText is not null) QueueNowTimeText.Text = $"{Format(position)} / {Format(duration)}";
+            // 当前播放卡与桌面画面摘要
+            if (HeroTitleText is not null) HeroTitleText.Text = snapshot.Current?.Title ?? "尚未选择播放项";
+            if (HeroUploaderText is not null) HeroUploaderText.Text = snapshot.Current?.Uploader ?? "";
+            if (HeroPartText is not null) HeroPartText.Text = snapshot.Current is { } hero
+                ? $"P{hero.Page:00} · 来自「{SourceTitle(hero.Key)}」" : "";
+            if (LibrarySummaryText is not null) LibrarySummaryText.Text = $"{snapshot.Sources.Count} 个来源 · {snapshot.Entries.Count} 个分 P";
+            if (CatalogSummaryText is not null) CatalogSummaryText.Text = $"已导入 {snapshot.Entries.Count} 个分 P，来自 {snapshot.Sources.Count} 个来源。";
+            if (CatalogTabAllCount is not null) CatalogTabAllCount.Text = snapshot.Entries.Count.ToString(CultureInfo.InvariantCulture);
+            if (CatalogTabSourceCount is not null) CatalogTabSourceCount.Text = snapshot.Sources.Count.ToString(CultureInfo.InvariantCulture);
+            if (DesktopMonitorText is not null) DesktopMonitorText.Text = DesktopTargetLabel();
+            if (DesktopFitText is not null) DesktopFitText.Text = _preferences.FillWindow ? "填充" : "适应";
+            if (DesktopPreviewInfoText is not null) DesktopPreviewInfoText.Text = DesktopPreviewInfo();
+            if (WorkbenchSourceList is not null) WorkbenchSourceList.ItemsSource = snapshot.Sources
+                .Select((s, i) => new WorkbenchSourceRow(s.Id, s.Title, SourceSubtitle(s),
+                    s.Members.Select(key => entries.TryGetValue(key, out var entry) ? entry.Uploader : null).FirstOrDefault(name => !string.IsNullOrEmpty(name)) ?? "—",
+                    s.Members.Count, i % 3)).ToArray();
+            ModeBox.SelectedIndex = snapshot.Playback.Mode == QueueMode.Sequential ? 1 : 0;
+            if (ModeBoxHome is not null)
+            {
+                _settingMode = true;
+                try { ModeBoxHome.SelectedIndex = ModeBox.SelectedIndex; }
+                finally { _settingMode = false; }
+            }
+            SetVolumeSlider(snapshot.Playback.Volume);
             StatusText.Text = snapshot.Notice;
             RenderQuality(snapshot);
             RenderRoaming();
@@ -459,6 +732,25 @@ public partial class MainWindow : Window
             RefreshDesktop();
         }
         finally { _rendering = false; }
+    }
+
+    private string DesktopTargetLabel() => DisplayBox?.SelectedItem is DisplayTarget target ? target.Label : "显示器 1 · 主屏";
+
+    private string DesktopPreviewInfo() => DisplayBox?.SelectedItem is DisplayTarget target && target.Width > 0
+        ? $"主显示器 · {target.Width} × {target.Height} · {(target.Width >= target.Height ? "横向" : "纵向")}"
+        : "主显示器 · 自动选择 · 横向";
+
+    /// <summary>来源副标题：来源类型 + 最近一次刷新时间，与设计稿的「合集 · 今天已刷新」一致。</summary>
+    private static string SourceSubtitle(CatalogSource source)
+    {
+        var kind = source.Collection is { } collection
+            ? collection.Kind == CollectionKind.Season ? "合集" : "系列"
+            : "手动导入";
+        var refreshed = source.RefreshedAt.ToLocalTime();
+        var stamp = refreshed.Date == DateTimeOffset.Now.Date ? "今天已刷新"
+            : refreshed.DayOfYear == DateTimeOffset.Now.DayOfYear - 1 || refreshed.Date == DateTimeOffset.Now.Date.AddDays(-1) ? "昨天已刷新"
+            : $"{refreshed:MM-dd} 已刷新";
+        return $"{kind} · {stamp}";
     }
 
     /// <summary>Shows the offered tiers as selections and the actually playing quality separately, so a
@@ -564,7 +856,7 @@ public partial class MainWindow : Window
 
     private static string Availability(CatalogEntry entry) => entry.Availability switch
     {
-        EntryAvailability.Available => "可播放", EntryAvailability.Failed => "失败：" + Failure(entry.Failure), _ => "待播放"
+        EntryAvailability.Available => "可播放", EntryAvailability.Failed => "不可访问", _ => "待播放"
     };
     private static string Failure(string? failure) => failure switch
     {
@@ -605,8 +897,22 @@ public partial class MainWindow : Window
         }
     }
 
-    private sealed record SourceRow(string Id, string Title);
-    private sealed record EntryRow(CatalogEntry Entry, string Status);
-    private sealed record QueueRow(Guid Id, string Marker, string Title, string Status);
+    /// <summary>来源行：Label 供下拉展示，Title/Count 供侧栏分行展示。</summary>
+    private sealed record SourceRow(string Id, string Title, int Count)
+    {
+        public string Label => Count > 0 ? $"{Title}（{Count}）" : Title;
+    }
+
+    /// <summary>片库行：Index/Source/Duration/Playing 供设计稿样式的表格列使用。</summary>
+    private sealed record EntryRow(CatalogEntry Entry, string Status, string Index, string Source, string Duration,
+        bool Playing, bool Unavailable);
+
+    /// <summary>队列行：Marker 为空表示不是当前播放项。</summary>
+    private sealed record QueueRow(Guid Id, string Index, string Title, string Uploader, string Source, string Duration,
+        string Status, bool Playing, string Marker);
+
+    /// <summary>工作台「我的来源」表行：Variant 选择三张示意封面之一。</summary>
+    private sealed record WorkbenchSourceRow(string Id, string Title, string Subtitle, string Uploader, int Count, int Variant);
+
     private sealed record QualityRow(string? Id, string Label, bool Special = false);
 }

@@ -247,9 +247,10 @@ public sealed class DesktopRegressionTests
             Assert.NotEqual(IntPtr.Zero, handle);
             Assert.True(IsWindowVisible(handle));
 
+            // 页签顺序由界面决定，这里按承载的面板找到对应的页，而不是写死下标。
             var tabs = f.Window.ContentTabs;
-            var manualTab = (TabItem)tabs.Items[0];
-            var roamingTab = (TabItem)tabs.Items[1];
+            var manualTab = await SelectTabContainingAsync(host, tabs, f.Window.ListsPanel);
+            var roamingTab = await SelectTabContainingAsync(host, tabs, f.Window.RoamingPanel);
             SelectTab(roamingTab);
             await WaitForLayoutAsync(host, () => roamingTab.IsSelected && f.Window.RoamingPanel.IsVisible);
             SelectTab(manualTab);
@@ -311,6 +312,110 @@ public sealed class DesktopRegressionTests
         finally { host.Close(); }
     });
 
+    /// <summary>把每个画面渲染成 PNG，用于和 .codebuddy/figma/2_2 设计稿逐张比对。
+    /// 只在显式运行时执行：dotnet test --filter DesignScreenshots</summary>
+    [Fact(Explicit = true)]
+    public Task DesignScreenshotsOfEveryPage() => OnSta(async () =>
+    {
+        using var f = new WindowFixture();
+        await f.Library.InitializeAsync(Token);
+        var state = (LibraryState)Get(f.Library, "_state")!;
+        // 与设计稿示例一致的内容，方便逐画面比对。
+        var seed = new (string Bvid, string Title, string Uploader, int Part, int Minutes)[]
+        {
+            ("BV1SAMPLE001", "晴天的午后", "房间里的声音", 1, 45),
+            ("BV1SAMPLE002", "沿河慢行", "房间里的声音", 2, 32),
+            ("BV1SAMPLE003", "雨声和钢琴", "白噪音档案", 3, 28),
+            ("BV1SAMPLE004", "凌晨两点", "独立音乐选", 4, 51),
+            ("BV1SAMPLE005", "缓慢的星期日", "房间里的声音", 5, 36),
+            ("BV1SAMPLE006", "窗外的风", "独立音乐选", 6, 41),
+            ("BV1SAMPLE007", "树影晃动", "房间里的声音", 7, 27),
+            ("BV1SAMPLE008", "旧唱片的傍晚", "独立音乐选", 8, 35)
+        };
+        var keys = new List<ContentKey>();
+        foreach (var (bvid, title, uploader, part, minutes) in seed)
+        {
+            var key = new ContentKey(bvid, 100 + part);
+            state.Entries.Add(new CatalogEntry(key, title, uploader, part,
+                TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(part * 3 + 17),
+                part == 8 ? EntryAvailability.Failed : EntryAvailability.Available, part == 8 ? "Inaccessible" : null));
+            keys.Add(key);
+        }
+        state.Sources.Add(new CatalogSource("src-music", "轻音乐日常", null,
+            new CollectionSource(900001, 11, CollectionKind.Season), DateTimeOffset.Now,
+            [keys[0], keys[1], keys[4], keys[6]], []));
+        state.Sources.Add(new CatalogSource("src-focus", "专注时刻", null,
+            new CollectionSource(900002, 12, CollectionKind.Series), DateTimeOffset.Now,
+            [keys[3], keys[5], keys[7]], []));
+        state.Sources.Add(new CatalogSource("src-rain", "雨天白噪音", null,
+            new CollectionSource(900003, 13, CollectionKind.Season), DateTimeOffset.Now, [keys[2]], []));
+        var creator = new FollowedCreator(900001, "轻音乐日常");
+        var now = DateTimeOffset.Now;
+        CreatorVideo[] videos = [
+            new("BV1SAMPLE101", creator.Uid, creator.Name, "今日新作 · 城市夜景", now.AddHours(-2), TimeSpan.FromMinutes(12)),
+            new("BV1SAMPLE102", creator.Uid, creator.Name, "未播旧作 · 雨声与窗景", now.AddDays(-20), TimeSpan.FromMinutes(30))
+        ];
+        await ((RoamingService)Get(f.Window, "_roaming")!).DisposeAsync();
+        var roaming = new RoamingService(f.Library, new VisibleDiscovery(creator, videos));
+        Set(f.Window, "_roaming", roaming);
+        Set(f.Window, "_roamingOperations", new HashSet<Task>());
+        await roaming.SetAccountAsync(creator.Uid, Token);
+        await roaming.SaveSubscriptionsAsync([creator], Token);
+        await roaming.RefreshAsync(Token);
+        await f.Library.EnqueueAsync(keys.Take(6).ToArray(), Token);
+        await f.Library.PlayAsync(token: Token);
+        Set(f.Window, "_ready", true);
+
+        var directory = Environment.GetEnvironmentVariable("WALLBILI_UI_ARTIFACT_DIR") ??
+            Path.Combine(Path.GetTempPath(), "wallbili-design-review");
+        var host = LoadVisibleFixture(f.Window);
+        try
+        {
+            Call(f.Window, "Render");
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            host.Loaded += (_, _) => loaded.TrySetResult();
+            host.Show();
+            await loaded.Task.WaitAsync(TimeSpan.FromSeconds(5), Token);
+
+            var tabs = f.Window.ContentTabs;
+            var names = new[] { "01-workbench", "02-library", "03-queue", "04-roaming", "05-desktop" };
+            for (var index = 0; index < names.Length; index++)
+            {
+                SelectTab((TabItem)tabs.Items[index]);
+                await WaitForLayoutAsync(host, () => ((TabItem)tabs.Items[index]).IsSelected);
+                Capture(host, directory, $"design-{names[index]}.png");
+            }
+
+            f.Window.AddSourceOverlay.Visibility = Visibility.Visible;
+            await WaitForLayoutAsync(host, () => f.Window.ImportPanel.IsVisible);
+            Capture(host, directory, "design-06-import.png");
+            TestContext.Current.TestOutputHelper?.WriteLine($"Screenshots={directory}");
+        }
+        finally { host.Close(); }
+    });
+
+    private static void Capture(Window host, string directory, string name)
+    {
+        var root = (Grid)host.Content;
+        var dpi = VisualTreeHelper.GetDpi(root);
+        var width = root.ActualWidth + root.Margin.Left + root.Margin.Right;
+        var height = root.ActualHeight + root.Margin.Top + root.Margin.Bottom;
+        var frame = new DrawingVisual();
+        using (var drawing = frame.RenderOpen())
+        {
+            drawing.DrawRectangle(host.Background, null, new Rect(0, 0, width, height));
+            drawing.DrawRectangle(new VisualBrush(root), null,
+                new Rect(root.Margin.Left, root.Margin.Top, root.ActualWidth, root.ActualHeight));
+        }
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(width * dpi.DpiScaleX),
+            (int)Math.Ceiling(height * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+        bitmap.Render(frame);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        Directory.CreateDirectory(directory);
+        using var output = File.Create(Path.Combine(directory, name));
+        encoder.Save(output);
+    }
+
     private static Window LoadVisibleFixture(MainWindow target, [CallerFilePath] string source = "")
     {
         var repo = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "../.."));
@@ -345,7 +450,8 @@ public sealed class DesktopRegressionTests
         }
         foreach (var hookup in hookups)
         {
-            var control = host.FindName(hookup.Name);
+            // 模板里的行内按钮不在窗口名字作用域内，隔离窗口不接线（它们的行为由真实窗口覆盖）。
+            if (host.FindName(hookup.Name) is not { } control) continue;
             var eventInfo = control.GetType().GetEvent(hookup.Event)!;
             var method = typeof(MainWindow).GetMethod(hookup.Method, Fields | BindingFlags.DeclaredOnly)!;
             eventInfo.AddEventHandler(control, method.CreateDelegate(eventInfo.EventHandlerType!, target));
@@ -363,6 +469,18 @@ public sealed class DesktopRegressionTests
             if (condition()) return;
         } while (DateTime.UtcNow < deadline);
         Assert.Fail("The isolated WPF window did not reach the expected visible state before the timeout.");
+    }
+
+    private static async Task<TabItem> SelectTabContainingAsync(Window host, TabControl tabs, FrameworkElement child)
+    {
+        foreach (var item in tabs.Items.OfType<TabItem>())
+        {
+            SelectTab(item);
+            host.UpdateLayout();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (child.IsVisible) return item;
+        }
+        throw new InvalidOperationException($"No tab hosts {child.Name}.");
     }
 
     private static void SelectTab(TabItem tab) =>

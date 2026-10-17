@@ -3,21 +3,30 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
+        <!-- ==================================================================
+             WallBili 界面主题 —— 规格来自 .codebuddy/figma/2_2 设计稿（V2 浅色极简 · 严格灰阶）。
+             所有颜色满足 R = G = B，层级只靠明度、字重、留白与细分隔线表达。
+             本字典必须保持扁平：桌面回归测试会把 Application.Resources 的子项整体复制到
+             独立窗口里渲染，因此不能使用 MergedDictionaries。
+             ================================================================== -->
 
-        <!-- ================================================================
-             设计令牌 —— 取自 .codebuddy/figma/2_2 设计稿
-             配色为中性灰阶：面板 #F3F3F3~#FCFCFC，文字 #191919/#555555/#808080/#A3A3A3
-             圆角统一 4px，边框 #DADADA
-             ================================================================ -->
+        <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, sans-serif</FontFamily>
 
-        <!-- 文字 -->
+        <!-- 文字：主要 / 正文 / 辅助 / 次要 -->
         <SolidColorBrush x:Key="Ink900" Color="#FF191919" />
         <SolidColorBrush x:Key="Ink700" Color="#FF555555" />
         <SolidColorBrush x:Key="Ink500" Color="#FF808080" />
         <SolidColorBrush x:Key="Ink400" Color="#FFA3A3A3" />
         <SolidColorBrush x:Key="OnInk" Color="#FFFFFFFF" />
 
-        <!-- 面 -->
+        <!-- 线：分隔线 / 浅边 / 控件边 / 强调边 -->
+        <SolidColorBrush x:Key="Line" Color="#FFECECEC" />
+        <SolidColorBrush x:Key="LineSoft" Color="#FFE1E1E1" />
+        <SolidColorBrush x:Key="LineField" Color="#FFDADADA" />
+        <SolidColorBrush x:Key="LineStrong" Color="#FFA8A8A8" />
+        <SolidColorBrush x:Key="LineCheck" Color="#FFC8C8C8" />
+
+        <!-- 表面：白 → 轻量 → 选中 → 深色 -->
         <SolidColorBrush x:Key="Surface0" Color="#FFFFFFFF" />
         <SolidColorBrush x:Key="Surface1" Color="#FFFCFCFC" />
         <SolidColorBrush x:Key="Surface2" Color="#FFF8F8F8" />
@@ -25,226 +34,854 @@
         <SolidColorBrush x:Key="Surface4" Color="#FFF4F4F4" />
         <SolidColorBrush x:Key="Surface5" Color="#FFF3F3F3" />
         <SolidColorBrush x:Key="Surface6" Color="#FFEFEFEF" />
-        <SolidColorBrush x:Key="Surface7" Color="#FFECECEC" />
-        <SolidColorBrush x:Key="Surface8" Color="#FFE9E9E9" />
-        <SolidColorBrush x:Key="Surface9" Color="#FFE5E5E5" />
-        <SolidColorBrush x:Key="Surface10" Color="#FFDDDDDD" />
-
-        <!-- 线 -->
-        <SolidColorBrush x:Key="Line" Color="#FFDADADA" />
-        <SolidColorBrush x:Key="LineSoft" Color="#FFE2E2E2" />
-        <SolidColorBrush x:Key="LineMuted" Color="#FFD5D5D5" />
-        <SolidColorBrush x:Key="LineStrong" Color="#FFA8A8A8" />
-        <SolidColorBrush x:Key="Scrim" Color="#33000000" />
-
-        <!-- 字体：设计字体 → 系统自带首选备选 → 通用兜底（WPF 支持逗号分隔的字体回退链） -->
-        <FontFamily x:Key="UiFont">Inter, Geist Sans, Segoe UI Variable Text, Segoe UI, Source Han Sans SC, 思源黑体, Noto Sans SC, Microsoft YaHei UI, Microsoft YaHei</FontFamily>
+        <SolidColorBrush x:Key="Surface7" Color="#FFE9E9E9" />
+        <SolidColorBrush x:Key="Scrim" Color="#FFE6E6E6" />
+        <SolidColorBrush x:Key="SurfaceInk" Color="#FF191919" />
+        <SolidColorBrush x:Key="SurfaceInkHover" Color="#FF2E2E2E" />
+        <SolidColorBrush x:Key="Track" Color="#FFECECEC" />
+        <SolidColorBrush x:Key="ToggleOff" Color="#FFDADADA" />
 
         <!-- ============================ 文字样式 ============================ -->
-        <Style x:Key="T.Display" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+
+        <Style x:Key="Text.PageTitle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontSize" Value="27" />
             <Setter Property="FontWeight" Value="Bold" />
-            <Setter Property="Foreground" Value="{StaticResource Ink900}" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
+        <Style x:Key="Text.PageSubtitle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink500}" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
+        <Style x:Key="Text.Section" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
+        <Style x:Key="Text.Hero" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="21" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
+        <Style x:Key="Text.HeroTime" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="31" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
+        <Style x:Key="Text.StateTitle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="22" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="Text.Body" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink700}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="Text.Muted" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink500}" />
+        </Style>
+        <Style x:Key="Text.Quiet" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink500}" />
+        </Style>
+        <Style x:Key="Text.Label" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink700}" />
+        </Style>
+        <Style x:Key="Text.LabelStrong" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+        </Style>
+        <Style x:Key="Text.Meta" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink500}" />
+        </Style>
+        <Style x:Key="Text.Faint" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink400}" />
+        </Style>
+        <Style x:Key="Text.TableHeader" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink400}" />
+        </Style>
+        <Style x:Key="Text.RowTitle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
             <Setter Property="TextWrapping" Value="NoWrap" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
-        <Style x:Key="T.Title" TargetType="TextBlock" BasedOn="{StaticResource T.Display}">
-            <Setter Property="FontSize" Value="23" />
+        <Style x:Key="Text.RowTitleLarge" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
-        <Style x:Key="T.H1" TargetType="TextBlock" BasedOn="{StaticResource T.Display}">
-            <Setter Property="FontSize" Value="21" />
-        </Style>
-        <Style x:Key="T.H2" TargetType="TextBlock" BasedOn="{StaticResource T.Display}">
+        <Style x:Key="Text.Brand" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontSize" Value="18" />
-        </Style>
-        <Style x:Key="T.H3" TargetType="TextBlock" BasedOn="{StaticResource T.Display}">
-            <Setter Property="FontSize" Value="16" />
-        </Style>
-        <Style x:Key="T.H4" TargetType="TextBlock" BasedOn="{StaticResource T.Display}">
-            <Setter Property="FontSize" Value="15" />
-        </Style>
-        <Style x:Key="T.Body" TargetType="TextBlock" BasedOn="{StaticResource T.Display}">
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="FontWeight" Value="Normal" />
-            <Setter Property="Foreground" Value="{StaticResource Ink700}" />
-        </Style>
-        <Style x:Key="T.BodyStrong" TargetType="TextBlock" BasedOn="{StaticResource T.Body}">
             <Setter Property="FontWeight" Value="Bold" />
-            <Setter Property="Foreground" Value="{StaticResource Ink900}" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
         </Style>
-        <Style x:Key="T.Small" TargetType="TextBlock" BasedOn="{StaticResource T.Body}">
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="Foreground" Value="{StaticResource Ink500}" />
-        </Style>
-        <Style x:Key="T.Tiny" TargetType="TextBlock" BasedOn="{StaticResource T.Body}">
-            <Setter Property="FontSize" Value="10" />
-            <Setter Property="Foreground" Value="{StaticResource Ink400}" />
-        </Style>
-        <Style x:Key="T.Micro" TargetType="TextBlock" BasedOn="{StaticResource T.Body}">
+        <Style x:Key="Text.BrandSub" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontSize" Value="9" />
-            <Setter Property="Foreground" Value="{StaticResource Ink500}" />
-        </Style>
-        <Style x:Key="T.Metric" TargetType="TextBlock" BasedOn="{StaticResource T.Display}">
-            <Setter Property="FontSize" Value="31" />
-        </Style>
-        <Style x:Key="T.SectionLabel" TargetType="TextBlock" BasedOn="{StaticResource T.Body}">
-            <Setter Property="FontSize" Value="10" />
-            <Setter Property="FontWeight" Value="Bold" />
-            <Setter Property="Foreground" Value="{StaticResource Ink400}" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink500}" />
         </Style>
 
-        <!-- ============================ 容器样式 ============================ -->
-        <Style x:Key="Panel" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource Surface5}" />
-            <Setter Property="CornerRadius" Value="4" />
+        <!-- ============================ 图标 ============================ -->
+
+        <!-- 图标几何取自设计稿导出，坐标即设计像素：使用处只需给 Data 与颜色 -->
+        <Style x:Key="Icon" TargetType="Path">
+            <Setter Property="Stretch" Value="None" />
+            <Setter Property="StrokeThickness" Value="1.2" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+            <Setter Property="IsHitTestVisible" Value="False" />
         </Style>
-        <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource Surface0}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Line}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="4" />
-        </Style>
-        <Style x:Key="Tile" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource Surface3}" />
-            <Setter Property="CornerRadius" Value="4" />
-        </Style>
-        <Style x:Key="Divider" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource Surface6}" />
-            <Setter Property="Height" Value="1" />
+        <Style x:Key="Icon.Thin" TargetType="Path" BasedOn="{StaticResource Icon}">
+            <Setter Property="StrokeThickness" Value="1" />
         </Style>
 
-        <!-- ============================ 按钮模板 ============================ -->
-        <ControlTemplate x:Key="BtnTemplate" TargetType="Button">
-            <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                    BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="4" SnapsToDevicePixels="True">
-                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                  Margin="{TemplateBinding Padding}" RecognizesAccessKey="True" />
-            </Border>
-            <ControlTemplate.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter TargetName="Bd" Property="Opacity" Value="0.82" />
-                </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter TargetName="Bd" Property="Opacity" Value="0.66" />
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter TargetName="Bd" Property="Opacity" Value="0.38" />
-                </Trigger>
-            </ControlTemplate.Triggers>
-        </ControlTemplate>
+        <!-- ============================ 按钮 ============================ -->
 
-        <Style x:Key="Btn.Base" TargetType="Button">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <!-- 主操作：深色实心，直角 -->
+        <Style x:Key="Btn.Primary" TargetType="Button">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource Ink900}" />
-            <Setter Property="Background" Value="{StaticResource Surface0}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Line}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="14,7" />
-            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Foreground" Value="{DynamicResource OnInk}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceInk}" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="18,0" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Template" Value="{StaticResource BtnTemplate}" />
-        </Style>
-        <Style TargetType="Button" BasedOn="{StaticResource Btn.Base}" />
-
-        <!-- 主操作：深色实心 -->
-        <Style x:Key="Btn.Primary" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
-            <Setter Property="Background" Value="{StaticResource Ink900}" />
-            <Setter Property="Foreground" Value="{StaticResource OnInk}" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="FontWeight" Value="Bold" />
-        </Style>
-
-        <!-- 次级操作：描边 -->
-        <Style x:Key="Btn.Ghost" TargetType="Button" BasedOn="{StaticResource Btn.Base}" />
-
-        <!-- 弱化操作：无边框灰底 -->
-        <Style x:Key="Btn.Subtle" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
-            <Setter Property="Background" Value="{StaticResource Surface4}" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="{StaticResource Ink700}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceInkHover}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Ink400}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
-        <!-- 纯文字操作 -->
-        <Style x:Key="Btn.Link" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="{StaticResource Ink500}" />
-            <Setter Property="Padding" Value="2,0" />
-            <Setter Property="MinHeight" Value="0" />
-            <Setter Property="FontSize" Value="10" />
-        </Style>
-
-        <!-- 侧边栏导航项 -->
-        <Style x:Key="Btn.Nav" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="{StaticResource Ink700}" />
-            <Setter Property="Padding" Value="12,0" />
-            <Setter Property="MinHeight" Value="37" />
-            <Setter Property="Height" Value="37" />
-            <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <!-- 次级操作：白底细边 -->
+        <Style x:Key="Btn.Ghost" TargetType="Button">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontSize" Value="12" />
-        </Style>
-
-        <!-- ============================ 输入控件 ============================ -->
-        <Style x:Key="Tb.Base" TargetType="TextBox">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource Ink900}" />
-            <Setter Property="Background" Value="{StaticResource Surface0}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="Background" Value="{DynamicResource Surface0}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineField}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="10,7" />
-            <Setter Property="MinHeight" Value="34" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-        </Style>
-        <Style TargetType="TextBox" BasedOn="{StaticResource Tb.Base}" />
-        <Style x:Key="Tb.Search" TargetType="TextBox" BasedOn="{StaticResource Tb.Base}">
-            <Setter Property="Background" Value="{StaticResource Surface2}" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="FontSize" Value="11" />
-        </Style>
-
-        <Style TargetType="ComboBox">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource Ink900}" />
-            <Setter Property="MinHeight" Value="34" />
-            <Setter Property="Padding" Value="10,6" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-        </Style>
-
-        <Style TargetType="CheckBox">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource Ink700}" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="16,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface2}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource Ink400}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
-        <Style TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource Ink700}" />
-            <Setter Property="TextWrapping" Value="Wrap" />
-        </Style>
-
-        <Style TargetType="ListBox">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-            <Setter Property="FontSize" Value="12" />
+        <!-- 行内图标按钮：平时无痕，悬停浮出一块浅面 -->
+        <Style x:Key="Btn.Icon" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="ItemContainerStyle" Value="{DynamicResource Lst.Row}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface4}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
-        <!-- 分页容器：页签标题由左侧导航承担，因此模板只保留选中页内容 -->
+        <!-- 纯文字行动点 -->
+        <Style x:Key="Btn.Link" TargetType="Button">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink500}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 侧栏导航项：160×37，选中态为浅面 + 深色粗体（样式名由 RenderNav 按名查找） -->
+        <Style x:Key="Btn.Nav" TargetType="Button">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink700}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Width" Value="160" />
+            <Setter Property="Height" Value="37" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                            <ContentPresenter Margin="14,0,10,0" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface3}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Btn.NavActive" TargetType="Button" BasedOn="{StaticResource Btn.Nav}">
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Background" Value="{DynamicResource Surface4}" />
+        </Style>
+
+        <!-- 侧栏来源行：整行可点，右侧计数 -->
+        <Style x:Key="Btn.Rail" TargetType="Button">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink700}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface3}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 标题栏按钮 -->
+        <Style x:Key="Btn.Window" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink700}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface4}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Btn.WindowClose" TargetType="Button" BasedOn="{StaticResource Btn.Window}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter x:Name="Host" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceInk}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============================ 输入 ============================ -->
+
+        <Style x:Key="Input.Field" TargetType="TextBox">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="Background" Value="{DynamicResource Surface0}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineField}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Height" Value="41" />
+            <Setter Property="Padding" Value="11,0" />
+            <Setter Property="CaretBrush" Value="{DynamicResource Ink900}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <TextBlock x:Name="Placeholder" Text="{TemplateBinding Tag}" Margin="{TemplateBinding Padding}"
+                                           FontSize="{TemplateBinding FontSize}" FontFamily="{TemplateBinding FontFamily}"
+                                           Foreground="{DynamicResource Ink400}" VerticalAlignment="Center"
+                                           TextWrapping="NoWrap" Visibility="Collapsed" />
+                                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center" Focusable="False"
+                                              HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Text" Value="">
+                                <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource LineStrong}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource Ink400}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 弹窗输入：更高，边框更实 -->
+        <Style x:Key="Input.Dialog" TargetType="TextBox" BasedOn="{StaticResource Input.Field}">
+            <Setter Property="Height" Value="45" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineStrong}" />
+        </Style>
+
+        <!-- 多行输入 -->
+        <Style x:Key="Input.Area" TargetType="TextBox" BasedOn="{StaticResource Input.Field}">
+            <Setter Property="Height" Value="Auto" />
+            <Setter Property="MinHeight" Value="120" />
+            <Setter Property="Padding" Value="11,9" />
+            <Setter Property="AcceptsReturn" Value="False" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        </Style>
+
+        <!-- 顶栏搜索：无框无底，仅图标与占位文字 -->
+        <Style x:Key="Input.Search" TargetType="TextBox">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink700}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CaretBrush" Value="{DynamicResource Ink900}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Grid Background="Transparent">
+                            <TextBlock x:Name="Placeholder" Text="{TemplateBinding Tag}" FontSize="{TemplateBinding FontSize}"
+                                       FontFamily="{TemplateBinding FontFamily}" Foreground="{DynamicResource Ink400}"
+                                       VerticalAlignment="Center" TextWrapping="NoWrap" Visibility="Collapsed" />
+                            <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center" Focusable="False"
+                                          HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Text" Value="">
+                                <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 无框字段：嵌在卡片里的单行输入（mpv 路径等） -->
+        <Style x:Key="Input.Plain" TargetType="TextBox" BasedOn="{StaticResource Input.Field}">
+            <Setter Property="Background" Value="{DynamicResource Surface2}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Height" Value="41" />
+        </Style>
+
+        <!-- ============================ 下拉选择 ============================ -->
+
+        <Style x:Key="Select.Item" TargetType="ComboBoxItem">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="Padding" Value="11,8" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" SnapsToDevicePixels="True">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface4}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface4}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="Select.Field" TargetType="ComboBox">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink700}" />
+            <Setter Property="Background" Value="{DynamicResource Surface0}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineField}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Height" Value="37" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ItemContainerStyle" Value="{DynamicResource Select.Item}" />
+            <Setter Property="MaxDropDownHeight" Value="320" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                    SnapsToDevicePixels="True" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                              IsHitTestVisible="False" />
+                            <Path Style="{DynamicResource Icon.Thin}" Data="{DynamicResource Icon.ChevronDown}"
+                                  Stroke="{DynamicResource Ink500}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  Margin="0,0,12,0" />
+                            <ToggleButton x:Name="Toggle" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent" />
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                                <Border Background="{DynamicResource Surface0}" BorderBrush="{DynamicResource LineField}"
+                                        BorderThickness="1" Margin="0,2,0,0"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ScrollViewer MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource LineStrong}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource Ink400}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============================ 勾选 / 开关 / 单选 ============================ -->
+
+        <!-- 方框勾选：15×15，选中为深色方块 + 白色对勾 -->
+        <Style x:Key="Check.Box" TargetType="CheckBox">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Background="Transparent">
+                            <Grid Width="15" Height="15" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                <Path x:Name="Box" Style="{DynamicResource Icon.Thin}" Data="{DynamicResource Icon.Checkbox}"
+                                      Fill="{DynamicResource Surface0}" Stroke="{DynamicResource LineCheck}"
+                                      Width="15" Height="15" />
+                                <Path x:Name="Fill" Data="{DynamicResource Icon.CheckboxOn}" Fill="{DynamicResource SurfaceInk}"
+                                      Width="14" Height="14" Visibility="Collapsed" />
+                                <Path x:Name="Mark" Style="{DynamicResource Icon.Thin}" Data="{DynamicResource Icon.Check}"
+                                      Stroke="{DynamicResource OnInk}" StrokeThickness="1" Width="8" Height="6"
+                                      Visibility="Collapsed" />
+                            </Grid>
+                            <ContentPresenter Margin="23,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Visibility" Value="Collapsed" />
+                                <Setter TargetName="Fill" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="Mark" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="Stroke" Value="{DynamicResource Ink400}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 开关：32×18，标签在前、开关在后（对齐设计稿的右置开关） -->
+        <Style x:Key="Check.Switch" TargetType="CheckBox">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Background="Transparent">
+                            <ContentPresenter VerticalAlignment="Center" Margin="0,0,44,0" RecognizesAccessKey="True" />
+                            <Grid Width="32" Height="18" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Path x:Name="Pill" Data="{DynamicResource Icon.Toggle}" Fill="{DynamicResource ToggleOff}"
+                                      Width="32" Height="18" />
+                                <Ellipse x:Name="Knob" Width="13" Height="13" Fill="{DynamicResource Surface0}"
+                                         HorizontalAlignment="Left" Margin="2.5,0,0,0" VerticalAlignment="Center" />
+                            </Grid>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Pill" Property="Fill" Value="{DynamicResource SurfaceInk}" />
+                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                                <Setter TargetName="Knob" Property="Margin" Value="0,0,2.5,0" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 单选：13×13 圆环，选中填深色圆点 -->
+        <Style x:Key="Radio.Circle" TargetType="RadioButton">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Grid Background="Transparent">
+                            <Grid Width="13" Height="13" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                <Path x:Name="Ring" Style="{DynamicResource Icon.Thin}" Data="{DynamicResource Icon.Radio}"
+                                      Fill="{DynamicResource Surface0}" Stroke="{DynamicResource LineStrong}"
+                                      Width="13" Height="13" />
+                                <Path x:Name="Dot" Data="{DynamicResource Icon.RadioDot}" Fill="{DynamicResource SurfaceInk}"
+                                      Width="6" Height="6" Visibility="Collapsed" />
+                            </Grid>
+                            <ContentPresenter Margin="22,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Ink900}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Ink500}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============================ 滑块 ============================ -->
+
+        <Style x:Key="Slider.TrackFill" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Height="2" Background="{DynamicResource Ink900}" VerticalAlignment="Center" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Slider.TrackEmpty" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Height="2" Background="{DynamicResource Track}" VerticalAlignment="Center" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Slider.Knob" TargetType="Thumb">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid Background="Transparent">
+                            <Ellipse x:Name="Dot" Width="6" Height="6" Fill="{DynamicResource SurfaceInk}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Dot" Property="Width" Value="8" />
+                                <Setter TargetName="Dot" Property="Height" Value="8" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Slider.Flat" TargetType="Slider">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="IsMoveToPointEnabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge" Style="{DynamicResource Slider.TrackFill}" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{DynamicResource Slider.Knob}" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge" Style="{DynamicResource Slider.TrackEmpty}" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============================ 滚动条 ============================ -->
+
+        <Style x:Key="Scroll.Thumb" TargetType="Thumb">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="{DynamicResource LineField}" Width="6" Margin="1,0" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{DynamicResource Scroll.Thumb}" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============================ 列表 ============================ -->
+
+        <!-- 片库行：整行内容由模板提供，分隔线在行底 -->
+        <Style x:Key="Row.Catalog" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" BorderBrush="{DynamicResource Line}"
+                                BorderThickness="0,0,0,1" SnapsToDevicePixels="True">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface2}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface4}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 无分隔线的行（队列 / 侧栏） -->
+        <Style x:Key="Row.Bare" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" SnapsToDevicePixels="True">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface2}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface4}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="List.Rows" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="ItemContainerStyle" Value="{DynamicResource Row.Catalog}" />
+            <Setter Property="SelectionMode" Value="Extended" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <ScrollViewer Focusable="False" Padding="{TemplateBinding Padding}">
+                            <ItemsPresenter />
+                        </ScrollViewer>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="List.Queue" TargetType="ListBox" BasedOn="{StaticResource List.Rows}">
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="ItemContainerStyle" Value="{DynamicResource Row.Bare}" />
+        </Style>
+
+        <Style x:Key="List.Rail" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="ItemContainerStyle" Value="{DynamicResource Row.Bare}" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <ScrollViewer Focusable="False">
+                            <ItemsPresenter />
+                        </ScrollViewer>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============================ 分页容器 ============================ -->
+
+        <!-- 页签由左侧导航承担，模板只保留当前页内容 -->
         <Style x:Key="Tabs.Plain" TargetType="TabControl">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -257,44 +894,85 @@
                 </Setter.Value>
             </Setter>
         </Style>
-
-        <!-- 无边框输入：用于内嵌在卡片里的单行字段 -->
-        <Style x:Key="Tb.Flat" TargetType="TextBox" BasedOn="{StaticResource Tb.Base}">
-            <Setter Property="Background" Value="{StaticResource Surface3}" />
-            <Setter Property="BorderThickness" Value="0" />
-        </Style>
-
-        <!-- 侧边栏导航项：选中态由代码切换 Background / FontWeight -->
-        <Style x:Key="Btn.NavActive" TargetType="Button" BasedOn="{StaticResource Btn.Nav}">
-            <Setter Property="Background" Value="{StaticResource Surface4}" />
-            <Setter Property="Foreground" Value="{StaticResource Ink900}" />
-            <Setter Property="FontWeight" Value="Bold" />
-        </Style>
-
-        <!-- 侧边栏分组标题（我的来源） -->
-        <Style x:Key="Nav.Label" TargetType="TextBlock" BasedOn="{StaticResource T.Tiny}">
-            <Setter Property="Margin" Value="20,0,20,8" />
-        </Style>
-
-        <!-- 列表行：来源 / 接下来播放 -->
-        <Style x:Key="Lst.Row" TargetType="ListBoxItem">
-            <Setter Property="Padding" Value="10,8" />
-            <Setter Property="Margin" Value="0,0,0,2" />
-            <Setter Property="Foreground" Value="{StaticResource Ink700}" />
+        <Style x:Key="Page.Plain" TargetType="TabItem">
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter VerticalAlignment="Center" />
-                        </Border>
+                    <ControlTemplate TargetType="TabItem">
+                        <ContentPresenter ContentSource="Content" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============================ 杂项 ============================ -->
+
+        <!-- 播放中标记：20×20 深色方块 -->
+        <Style x:Key="Chip.Playing" TargetType="Border">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceInk}" />
+        </Style>
+
+        <!-- 播放中的行：左侧深色竖条 -->
+        <Style x:Key="Bar.Playing" TargetType="Border">
+            <Setter Property="Width" Value="2" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceInk}" />
+        </Style>
+
+        <!-- 卡片：监控/预览用的浅面容器 -->
+        <Style x:Key="Panel.Flat" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource Surface3}" />
+        </Style>
+
+        <!-- 分隔线 -->
+        <Style x:Key="Divider" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource Line}" />
+            <Setter Property="Height" Value="1" />
+        </Style>
+
+        <!-- 下划线页签：弹窗里的分段切换（添加来源与登录弹窗共用） -->
+        <Style x:Key="Tabs.Underline" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="1" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TabPanel Grid.Row="0" IsItemsHost="True" Panel.ZIndex="1" HorizontalAlignment="Left" />
+                            <Border Grid.Row="1" Background="{DynamicResource Line}" />
+                            <ContentPresenter Grid.Row="2" ContentSource="SelectedContent" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Tab.Underline" TargetType="TabItem">
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink500}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Grid Background="Transparent">
+                            <Border x:Name="Marker" Height="2" Background="{DynamicResource SurfaceInk}"
+                                    Visibility="Collapsed" VerticalAlignment="Bottom" Margin="0,0,0,-1" />
+                            <ContentPresenter x:Name="Host" ContentSource="Header" Margin="0,0,28,10" />
+                        </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Surface4}" />
-                            </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Surface9}" />
-                                <Setter Property="Foreground" Value="{StaticResource Ink900}" />
+                                <Setter TargetName="Marker" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
+                                <Setter Property="FontWeight" Value="Bold" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -302,62 +980,1533 @@
             </Setter>
         </Style>
 
-        <!-- ============================ 表格样式 ============================ -->
-        <Style x:Key="Grid.Header" TargetType="DataGridColumnHeader">
-            <Setter Property="Background" Value="{StaticResource Surface2}" />
-            <Setter Property="Foreground" Value="{StaticResource Ink500}" />
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="FontWeight" Value="Normal" />
-            <Setter Property="Height" Value="38" />
-            <Setter Property="Padding" Value="12,0" />
-            <Setter Property="BorderThickness" Value="0,0,0,1" />
-            <Setter Property="BorderBrush" Value="{StaticResource Line}" />
-            <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-        </Style>
-        <Style x:Key="Grid.Row" TargetType="DataGridRow">
-            <Setter Property="Background" Value="{StaticResource Surface0}" />
-            <Setter Property="Height" Value="46" />
-            <Setter Property="Foreground" Value="{StaticResource Ink700}" />
-        </Style>
-        <Style x:Key="Grid.Cell" TargetType="DataGridCell">
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="12,0" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="DataGridCell">
-                        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter VerticalAlignment="Center" />
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style TargetType="DataGrid">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Background" Value="{StaticResource Surface0}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Line}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="RowBackground" Value="{StaticResource Surface0}" />
-            <Setter Property="AlternatingRowBackground" Value="{StaticResource Surface0}" />
-            <Setter Property="GridLinesVisibility" Value="Horizontal" />
-            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Surface6}" />
-            <Setter Property="HeadersVisibility" Value="Column" />
-            <Setter Property="AutoGenerateColumns" Value="False" />
-            <Setter Property="CanUserAddRows" Value="False" />
-            <Setter Property="CanUserDeleteRows" Value="False" />
-            <Setter Property="CanUserResizeRows" Value="False" />
-            <Setter Property="CanUserReorderColumns" Value="False" />
-            <Setter Property="SelectionMode" Value="Extended" />
-            <Setter Property="ColumnHeaderStyle" Value="{StaticResource Grid.Header}" />
-            <Setter Property="RowStyle" Value="{StaticResource Grid.Row}" />
-            <Setter Property="CellStyle" Value="{StaticResource Grid.Cell}" />
-        </Style>
+<!-- BEGIN GENERATED DESIGN ASSETS -->
+    <!-- 由 .codebuddy/figma/2_2/_gen_xaml.js 从 2_2 设计稿导出生成，勿手工编辑。
+         几何坐标即设计稿像素坐标，使用处用 Width/Height + Stretch="None"。 -->
+    <!-- Logo · 19x21 原色 #191919 -->
+    <PathGeometry x:Key="Icon.Logo" Figures="M0.833374 8.125V12.2917M5.00004 3.95833V16.4583M9.16671 0.833334V19.5833M13.3334 5V15.4167M17.5 8.125V12.2917" />
+    <!-- NavHome · 15x14 原色 #191919 -->
+    <PathGeometry x:Key="Icon.NavHome" Figures="M0.599976 5.85001L7.34998 0.600006L14.1 5.85001V13.35H9.59998V8.85001H5.09998V13.35H0.599976V5.85001Z" />
+    <!-- NavLibrary · 14x14 原色 #808080 -->
+    <PathGeometry x:Key="Icon.NavLibrary" Figures="M2.09998 0.600006H11.1C11.9284 0.600006 12.6 1.27158 12.6 2.10001V11.1C12.6 11.9284 11.9284 12.6 11.1 12.6H2.09998C1.27155 12.6 0.599976 11.9284 0.599976 11.1V2.10001C0.599976 1.27158 1.27155 0.600006 2.09998 0.600006Z M0.599976 5.10001H5.09998M5.09998 5.10001H12.6M5.09998 5.10001V12.6" />
+    <!-- NavQueue · 14x13 原色 #808080 -->
+    <PathGeometry x:Key="Icon.NavQueue" Figures="M0.599976 0.600006H12.6M0.599976 5.10001H8.84998M0.599976 9.60001H5.84998M11.1 5.85001V11.85M13.35 9.60001L11.1 11.85L8.84998 9.60001" />
+    <!-- NavAdd · 12x12 原色 #808080 -->
+    <PathGeometry x:Key="Icon.NavAdd" Figures="M5.52498 0.566681V5.52501M5.52498 5.52501V10.4833M5.52498 5.52501H0.56665M5.52498 5.52501H10.4833" />
+    <!-- NavGear · 15x15 原色 #808080 -->
+    <PathGeometry x:Key="Icon.NavGear" Figures="M5.09998 0.599976H9.59998L10.35 2.84998L12.6 3.59998L14.1 7.34998L12.6 11.1L10.35 11.85L9.59998 14.1H5.09998L4.34998 11.85L2.09998 11.1L0.599976 7.34998L2.09998 3.59998L4.34998 2.84998L5.09998 0.599976Z M9.59998 7.34998C9.59998 8.59262 8.59262 9.59998 7.34998 9.59998C6.10733 9.59998 5.09998 8.59262 5.09998 7.34998C5.09998 6.10733 6.10733 5.09998 7.34998 5.09998C8.59262 5.09998 9.59998 6.10733 9.59998 7.34998Z" />
+    <!-- NavTray · 13x14 原色 #555555 -->
+    <PathGeometry x:Key="Icon.NavTray" Figures="M0.56665 8.35832V12.6083H11.9V8.35832M6.23332 0.56665V9.06665M9.06665 6.23332L6.23332 9.06665L3.39998 6.23332" />
+    <!-- Search · 14x14 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Search" Figures="M10.35 5.475C10.35 8.16739 8.16736 10.35 5.47498 10.35C2.78259 10.35 0.599976 8.16739 0.599976 5.475C0.599976 2.78261 2.78259 0.6 5.47498 0.6C8.16736 0.6 10.35 2.78261 10.35 5.475Z M9.22498 9.225L13.35 13.35" />
+    <!-- Save · 14x14 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Save" Figures="M0.600098 8.85V13.35H12.6001V8.85M6.6001 0.6V9.6M9.6001 6.6L6.6001 9.6L3.6001 6.6" />
+    <!-- ChevronDown · 6x4 原色 #808080 -->
+    <PathGeometry x:Key="Icon.ChevronDown" Figures="M0.5 0.5L3 3L5.5 0.5" />
+    <!-- WindowMin · 10x1 原色 #808080 -->
+    <PathGeometry x:Key="Icon.WindowMin" Figures="M0 0.5H10" />
+    <!-- WindowMax · 10x10 原色 #808080 -->
+    <PathGeometry x:Key="Icon.WindowMax" Figures="M0.5 0.5H9.5V9.5H0.5V0.5Z" />
+    <!-- WindowClose · 10x10 原色 #808080 -->
+    <PathGeometry x:Key="Icon.WindowClose" Figures="M0.56665 0.566668L4.81665 4.81667M4.81665 4.81667L9.06665 9.06667M4.81665 4.81667L0.56665 9.06667M4.81665 4.81667L9.06665 0.566668" />
+    <!-- Plus11 · 11x11 原色 white -->
+    <PathGeometry x:Key="Icon.Plus11" Figures="M5.19987 0.533325V5.19999M5.19987 5.19999V9.86666M5.19987 5.19999H0.533203M5.19987 5.19999H9.86654" />
+    <!-- Plus12 · 12x12 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Plus12" Figures="M5.52523 0.566681V5.52501M5.52523 5.52501V10.4833M5.52523 5.52501H0.566895M5.52523 5.52501H10.4836" />
+    <!-- Refresh · 11x13 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Refresh" Figures="M9.9217 4.53333C9.38635 3.55303 8.53817 2.78022 7.51243 2.33813C6.48669 1.89605 5.34245 1.81015 4.2622 2.09413C3.18195 2.37811 2.2279 3.01563 1.55218 3.90501C0.876466 4.79438 0.518003 5.88441 0.533958 7.00125C0.549913 8.11809 0.939367 9.19742 1.64021 10.0671C2.34106 10.9368 3.31294 11.5468 4.40086 11.7999C5.48878 12.0529 6.63009 11.9343 7.64279 11.4631C8.65548 10.9919 9.48124 10.1952 9.98837 9.19999M5.9217 4.53333H9.9217V0.533325" />
+    <!-- Info · 11x11 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Info" Figures="M10.1831 5.30835C10.1831 8.00074 8.00049 10.1833 5.30811 10.1833C2.61572 10.1833 0.433105 8.00074 0.433105 5.30835C0.433105 2.61596 2.61572 0.43335 5.30811 0.43335C8.00049 0.43335 10.1831 2.61596 10.1831 5.30835Z M5.30811 4.7667V8.0167M5.30811 2.60004V3.1417" />
+    <!-- More · 13x3 原色 #808080 -->
+    <PathGeometry x:Key="Icon.More" Figures="M1.8001 1.20001C1.8001 1.53138 1.53147 1.80001 1.2001 1.80001C0.868727 1.80001 0.600098 1.53138 0.600098 1.20001C0.600098 0.868635 0.868727 0.600006 1.2001 0.600006C1.53147 0.600006 1.8001 0.868635 1.8001 1.20001Z M7.0501 1.20001C7.0501 1.53138 6.78147 1.80001 6.4501 1.80001C6.11873 1.80001 5.8501 1.53138 5.8501 1.20001C5.8501 0.868635 6.11873 0.600006 6.4501 0.600006C6.78147 0.600006 7.0501 0.868635 7.0501 1.20001Z M12.3001 1.20001C12.3001 1.53138 12.0315 1.80001 11.7001 1.80001C11.3687 1.80001 11.1001 1.53138 11.1001 1.20001C11.1001 0.868635 11.3687 0.600006 11.7001 0.600006C12.0315 0.600006 12.3001 0.868635 12.3001 1.20001Z" />
+    <!-- ArrowUp · 8x11 原色 #191919 -->
+    <PathGeometry x:Key="Icon.ArrowUp" Figures="M3.86654 9.86667V0.53334M7.19987 3.86667L3.86654 0.53334L0.533203 3.86667" />
+    <!-- ArrowDown · 8x11 原色 #191919 -->
+    <PathGeometry x:Key="Icon.ArrowDown" Figures="M3.86654 0.53334V9.86667M7.19987 6.53334L3.86654 9.86667L0.533203 6.53334" />
+    <!-- Checkbox · 15x15 原色 white / #C8C8C8 -->
+    <PathGeometry x:Key="Icon.Checkbox" Figures="M12.5 0.5H2.5C1.39543 0.5 0.5 1.39543 0.5 2.5V12.5C0.5 13.6046 1.39543 14.5 2.5 14.5H12.5C13.6046 14.5 14.5 13.6046 14.5 12.5V2.5C14.5 1.39543 13.6046 0.5 12.5 0.5Z" />
+    <!-- CheckboxOn · 14x14 原色 #191919 -->
+    <PathGeometry x:Key="Icon.CheckboxOn" Figures="M12 0H2C0.89543 0 0 0.89543 0 2V12C0 13.1046 0.89543 14 2 14H12C13.1046 14 14 13.1046 14 12V2C14 0.89543 13.1046 0 12 0Z" />
+    <!-- Check · 8x6 原色 white -->
+    <PathGeometry x:Key="Icon.Check" Figures="M0.399902 3.39999L2.3999 5.39999L7.3999 0.399994" />
+    <!-- Note · 12x14 原色 #191919 -->
+    <PathGeometry x:Key="Icon.Note" Figures="M0.533447 5.19999V7.86666M3.20011 2.53333V10.5333M5.86678 0.533325V12.5333M8.53345 3.19999V9.86666M11.2001 5.19999V7.86666" />
+    <!-- Play · 8x10 原色 black -->
+    <PathGeometry x:Key="Icon.Play" Figures="M0 0L7.33333 4.66667L0 9.33333V0Z" />
+    <!-- Prev · 11x13 原色 black / #191919 -->
+    <PathGeometry x:Key="Icon.Prev" Figures="M10.925 0.633362L3.0083 6.17503L10.925 11.7167V0.633362Z M0.633301 0.633362V11.7167" />
+    <!-- Next · 11x13 原色 black / #191919 -->
+    <PathGeometry x:Key="Icon.Next" Figures="M0 0.633362L7.91667 6.17503L0 11.7167V0.633362Z M10.2917 0.633362V11.7167" />
+    <!-- Pause · 9x12 原色 white -->
+    <PathGeometry x:Key="Icon.Pause" Figures="M1.05005 1.04999V10.05M7.05005 1.04999V10.05" />
+    <!-- Disc · 36x36 原色 #191919 -->
+    <PathGeometry x:Key="Icon.Disc" Figures="M18 36C27.9411 36 36 27.9411 36 18C36 8.05887 27.9411 0 18 0C8.05887 0 0 8.05887 0 18C0 27.9411 8.05887 36 18 36Z" />
+    <!-- Stop · 10x10 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Stop" Figures="M1.27498 0.56665H8.35832C8.74952 0.56665 9.06665 0.883782 9.06665 1.27498V8.35832C9.06665 8.74952 8.74952 9.06665 8.35832 9.06665H1.27498C0.883782 9.06665 0.56665 8.74952 0.56665 8.35832V1.27498C0.56665 0.883782 0.883782 0.56665 1.27498 0.56665Z" />
+    <!-- Repeat · 12x14 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Repeat" Figures="M10.5417 4.81665C9.97286 3.77509 9.07167 2.95397 7.98182 2.48426C6.89197 2.01454 5.67622 1.92327 4.52845 2.22501C3.38069 2.52674 2.36701 3.2041 1.64906 4.14906C0.931108 5.09402 0.550241 6.25217 0.567193 7.43882C0.584145 8.62546 0.99794 9.77225 1.74259 10.6963C2.48724 11.6204 3.51986 12.2685 4.67577 12.5373C5.83169 12.8062 7.04433 12.6802 8.12032 12.1795C9.19631 11.6789 10.0737 10.8324 10.6125 9.77498M6.29167 4.81665H10.5417V0.56665" />
+    <!-- Volume · 17x12 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Volume" Figures="M10.3501 2.85004C12.8501 4.85004 12.8501 6.85004 10.3501 8.85004M12.6001 0.600037C16.6001 4.10004 16.6001 7.60004 12.6001 11.1M0.600098 3.60004H3.6001L7.3501 0.600037V11.1L3.6001 8.10004H0.600098V3.60004Z" />
+    <!-- Monitor · 15x14 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Monitor" Figures="M1.7251 0.599976H12.9751C13.5964 0.599976 14.1001 1.10366 14.1001 1.72498V9.22498C14.1001 9.8463 13.5964 10.35 12.9751 10.35H1.7251C1.10378 10.35 0.600098 9.8463 0.600098 9.22498V1.72498C0.600098 1.10366 1.10378 0.599976 1.7251 0.599976Z M4.3501 13.35H7.3501M7.3501 13.35H10.3501M7.3501 13.35V10.35" />
+    <!-- QueueBadge · 14x13 原色 #808080 -->
+    <PathGeometry x:Key="Icon.QueueBadge" Figures="M0.600098 0.599976H12.6001M0.600098 5.09998H8.8501M0.600098 9.59998H5.8501M11.1001 5.84998V11.85M13.3501 9.59998L11.1001 11.85L8.8501 9.59998" />
+    <!-- Close · 11x11 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Close" Figures="M0.600098 0.600006L5.1001 5.10001M5.1001 5.10001L9.6001 9.60001M5.1001 5.10001L0.600098 9.60001M5.1001 5.10001L9.6001 0.600006" />
+    <!-- Link · 13x13 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Link" Figures="M4.98876 3.57188L7.11376 1.44688C7.67735 0.8833 8.44174 0.566681 9.23876 0.566681C10.0358 0.566681 10.8002 0.8833 11.3638 1.44688C11.9274 2.01047 12.244 2.77485 12.244 3.57188C12.244 4.36891 11.9274 5.1333 11.3638 5.69688L9.23876 7.82188M7.8221 9.23855L5.6971 11.3636C5.41804 11.6426 5.08675 11.864 4.72214 12.015C4.35753 12.166 3.96675 12.2438 3.5721 12.2438C2.77507 12.2438 2.01068 11.9271 1.4471 11.3636C0.883513 10.8 0.566895 10.0356 0.566895 9.23855C0.566895 8.44152 0.883513 7.67714 1.4471 7.11355L3.5721 4.98855M4.28043 8.53022L8.53043 4.28022" />
+    <!-- Radio · 13x13 原色 white / #A8A8A8 -->
+    <PathGeometry x:Key="Icon.Radio" Figures="M6.5 12.5C9.81371 12.5 12.5 9.81371 12.5 6.5C12.5 3.18629 9.81371 0.5 6.5 0.5C3.18629 0.5 0.5 3.18629 0.5 6.5C0.5 9.81371 3.18629 12.5 6.5 12.5Z" />
+    <!-- RadioDot · 6x6 原色 #191919 -->
+    <PathGeometry x:Key="Icon.RadioDot" Figures="M3 6C4.65685 6 6 4.65685 6 3C6 1.34315 4.65685 0 3 0C1.34315 0 0 1.34315 0 3C0 4.65685 1.34315 6 3 6Z" />
+    <!-- CheckSmall · 11x8 原色 white -->
+    <PathGeometry x:Key="Icon.CheckSmall" Figures="M0.533203 4.53333L3.19987 7.2L9.86654 0.533333" />
+    <!-- Toggle · 32x18 原色 #191919 / white -->
+    <PathGeometry x:Key="Icon.Toggle" Figures="M23 0H9C4.02944 0 0 4.02944 0 9C0 13.9706 4.02944 18 9 18H23C27.9706 18 32 13.9706 32 9C32 4.02944 27.9706 0 23 0Z M23 15.5C26.5899 15.5 29.5 12.5899 29.5 9C29.5 5.41015 26.5899 2.5 23 2.5C19.4101 2.5 16.5 5.41015 16.5 9C16.5 12.5899 19.4101 15.5 23 15.5Z" />
+    <!-- Wifi · 25x21 原色 #808080 -->
+    <PathGeometry x:Key="Icon.Wifi" Figures="M0.900391 4.5588C4.16947 2.1809 8.10795 0.899994 12.1504 0.899994C16.1928 0.899994 20.1313 2.1809 23.4004 4.5588M5.40039 9.0588C7.34772 7.5983 9.71623 6.8088 12.1504 6.8088C14.5846 6.8088 16.9531 7.5983 18.9004 9.0588M9.90039 13.5588C10.5845 13.1638 11.3605 12.9559 12.1504 12.9559C12.9403 12.9559 13.7163 13.1638 14.4004 13.5588 M13.2754 18.0588C13.2754 18.6801 12.7717 19.1838 12.1504 19.1838C11.5291 19.1838 11.0254 18.6801 11.0254 18.0588C11.0254 17.4375 11.5291 16.9338 12.1504 16.9338C12.7717 16.9338 13.2754 17.4375 13.2754 18.0588Z" />
+    <!-- MonitorBig · 23x21 原色 #808080 -->
+    <PathGeometry x:Key="Icon.MonitorBig" Figures="M2.58789 0.899994H19.4629C20.3949 0.899994 21.1504 1.65551 21.1504 2.58749V13.8375C21.1504 14.7695 20.3949 15.525 19.4629 15.525H2.58789C1.65591 15.525 0.900391 14.7695 0.900391 13.8375V2.58749C0.900391 1.65551 1.65591 0.899994 2.58789 0.899994Z M6.52539 20.025H11.0254M11.0254 20.025H15.5254M11.0254 20.025V15.525" />
+    <!-- PlusBig · 18x18 原色 #808080 -->
+    <PathGeometry x:Key="Icon.PlusBig" Figures="M8.77539 0.900024V8.77502M8.77539 8.77502V16.65M8.77539 8.77502H0.900391M8.77539 8.77502H16.6504" />
+    <!-- InfoBig · 23x23 原色 #808080 -->
+    <PathGeometry x:Key="Icon.InfoBig" Figures="M21.1504 11.025C21.1504 16.6169 16.6173 21.15 11.0254 21.15C5.43351 21.15 0.900391 16.6169 0.900391 11.025C0.900391 5.43314 5.43351 0.900024 11.0254 0.900024C16.6173 0.900024 21.1504 5.43314 21.1504 11.025Z M11.0254 9.90002V16.65M11.0254 5.40002V6.52502" />
 
+    <!-- 由 .codebuddy/figma/2_2/_gen_xaml.js 从 2_2 设计稿导出生成，勿手工编辑。 -->
+    <!-- AlbumArt · 94x81.63 · 18 个部件（设计稿 #487 #488 #489 #490 #491 #492 #493 #494 #495 #496 #36 #498 #499 #500 #502 #502 #503 #504） -->
+    <DrawingImage x:Key="Illus.AlbumArt">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F5F5F5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M94 0H0V81H94V0Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E9E9E9">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M56.6937 0H0.29375C0.131516 0 0 0.201472 0 0.45V63.9C0 64.1485 0.131516 64.35 0.29375 64.35H56.6937C56.856 64.35 56.9875 64.1485 56.9875 63.9V0.45C56.9875 0.201472 56.856 0 56.6937 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="3.53" Y="5.85" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FCFCFC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M54.7844 0H0.146875C0.0657582 0 0 0.100736 0 0.225V60.975C0 61.0993 0.0657582 61.2 0.146875 61.2H54.7844C54.8655 61.2 54.9313 61.0993 54.9313 60.975V0.225C54.9313 0.100736 54.8655 0 54.7844 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="4.55" Y="7.42" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F2F2F2">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M52.5812 0H0V58.05H52.5812V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="5.58" Y="9" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M5.58125 17.1C8.66369 17.1 11.1625 13.272 11.1625 8.55C11.1625 3.82797 8.66369 0 5.58125 0C2.49881 0 0 3.82797 0 8.55C0 13.272 2.49881 17.1 5.58125 17.1Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="38.48" Y="14.85" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E5E5E5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 5.92388C9.9875 -0.376119 19.2896 -1.65112 27.9062 2.09888C36.5229 5.84888 44.7479 5.32388 52.5812 0.523881V20.0989H0V5.92388Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="5.58" Y="46.95" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DDDDDD">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 5.625C9.00833 1.275 18.0656 0.3 27.1719 2.7C36.2781 5.1 44.7479 4.2 52.5812 0V11.25H0V5.625Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="5.58" Y="55.8" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M1.02813 0H0V61.2H1.02813V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="30.84" Y="7.42" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M54.9313 0H0V1.575H54.9313V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="4.55" Y="38.7" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#ECECEC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 0H12.4844C11.0156 20.55 11.4562 43.425 13.8062 68.625H0V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="1.18" Y="3.6" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0.699018 0.0141754C-0.182232 24.3142 0.0625598 46.5892 1.43339 66.8392M4.07714 0.0141754C2.70631 21.6142 3.00006 43.8892 4.95839 66.8392M7.45527 0.0141754C5.49694 25.0642 5.83964 47.3392 8.48339 66.8392">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="3.3" Y="4.27" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E2E2E2" Thickness="0.364" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#EFEFEF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M94 0H0V10.575H94V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="0" Y="70.42" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 0.0908813H94">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="0" Y="70.65" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E1E1E1" Thickness="0.182" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M14.3937 0H0.29375C0.131516 0 0 0.201472 0 0.45V1.35C0 1.59853 0.131516 1.8 0.29375 1.8H14.3937C14.556 1.8 14.6875 1.59853 14.6875 1.35V0.45C14.6875 0.201472 14.556 0 14.3937 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="65.36" Y="57.83" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0.88125 0H0V21.375H0.88125V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="66.53" Y="59.63" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0.88125 0H0V21.375H0.88125V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="78.14" Y="59.63" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D4D4D4">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M1.175 8.1L0 0H8.225L7.05 8.1H1.175Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="67.86" Y="49.95" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D0D0D0">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M5.77867 25.4409V0.465881ZM5.77867 15.9909C0.980756 14.9409 -0.781744 12.3909 0.491173 8.34088C3.91826 7.74088 5.68076 10.2909 5.77867 15.9909ZM5.77867 9.69088C9.10784 7.74088 11.1641 4.59088 11.9474 0.240881C8.91201 -0.659119 6.85576 2.49088 5.77867 9.69088ZM5.77867 7.44088C3.13492 6.24088 2.1068 3.91588 2.6943 0.465881C5.0443 0.765881 6.07242 3.09088 5.77867 7.44088ZM5.77867 21.3909C9.40159 20.6409 11.5068 18.3909 12.0943 14.6409C9.35263 13.4409 7.24742 15.6909 5.77867 21.3909Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="66.28" Y="25.27" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M5.77867 25.4409V0.465881M5.77867 15.9909C0.980756 14.9409 -0.781744 12.3909 0.491173 8.34088C3.91826 7.74088 5.68076 10.2909 5.77867 15.9909ZM5.77867 9.69088C9.10784 7.74088 11.1641 4.59088 11.9474 0.240881C8.91201 -0.659119 6.85576 2.49088 5.77867 9.69088ZM5.77867 7.44088C3.13492 6.24088 2.1068 3.91588 2.6943 0.465881C5.0443 0.765881 6.07242 3.09088 5.77867 7.44088ZM5.77867 21.3909C9.40159 20.6409 11.5068 18.3909 12.0943 14.6409C9.35263 13.4409 7.24742 15.6909 5.77867 21.3909Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="66.28" Y="25.27" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C9C9C9" Thickness="0.182" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <!-- DesktopCard · 272x153.63 · 19 个部件（设计稿 #52 #53 #54 #55 #56 #57 #58 #59 #60 #61 #62 #63 #64 #65 #66 #68 #68 #69 #70） -->
+    <DrawingImage x:Key="Illus.DesktopCard">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F3F3F3">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M268 0H4C1.79086 0 0 1.79086 0 4V149C0 151.209 1.79086 153 4 153H268C270.209 153 272 151.209 272 149V4C272 1.79086 270.209 0 268 0Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F5F5F5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M272 0H0V153H272V0Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E9E9E9">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M164.05 0H0.85C0.380558 0 0 0.380558 0 0.85V120.7C0 121.169 0.380558 121.55 0.85 121.55H164.05C164.519 121.55 164.9 121.169 164.9 120.7V0.85C164.9 0.380558 164.519 0 164.05 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="10.2" Y="11.05" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FCFCFC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M158.525 0H0.425C0.190279 0 0 0.190279 0 0.425V115.175C0 115.41 0.190279 115.6 0.425 115.6H158.525C158.76 115.6 158.95 115.41 158.95 115.175V0.425C158.95 0.190279 158.76 0 158.525 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="13.18" Y="14.02" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F2F2F2">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M152.15 0H0V109.65H152.15V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="16.15" Y="17" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M16.15 32.3C25.0694 32.3 32.3 25.0694 32.3 16.15C32.3 7.2306 25.0694 0 16.15 0C7.2306 0 0 7.2306 0 16.15C0 25.0694 7.2306 32.3 16.15 32.3Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="111.35" Y="28.05" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E5E5E5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 11.1896C28.9 -0.710448 55.8167 -3.11878 80.75 3.96455C105.683 11.0479 129.483 10.0562 152.15 0.989552V37.9646H0V11.1896Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="16.15" Y="88.69" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DDDDDD">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 10.625C26.0667 2.40833 52.275 0.566667 78.625 5.1C104.975 9.63333 129.483 7.93333 152.15 0V21.25H0V10.625Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="16.15" Y="105.4" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.975 0H0V115.6H2.975V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="89.25" Y="14.02" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M158.95 0H0V2.975H158.95V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="13.18" Y="73.1" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#ECECEC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 0H36.125C31.875 38.8167 33.15 82.025 39.95 129.625H0V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="3.4" Y="6.8" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M1.92179 0.0505371C-0.628212 45.9505 0.0801214 88.0255 4.04679 126.276M11.6968 0.0505371C7.73012 40.8505 8.58012 82.9255 14.2468 126.276M21.4718 0.0505371C15.8051 47.3672 16.7968 89.4422 24.4468 126.276">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="9.55" Y="8.08" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E2E2E2" Thickness="0.85" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#EFEFEF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M272 0H0V19.975H272V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="0" Y="133.02" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 0.212494H272">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="0" Y="133.45" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E1E1E1" Thickness="0.425" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M41.65 0H0.85C0.380558 0 0 0.380558 0 0.85V2.55C0 3.01944 0.380558 3.4 0.85 3.4H41.65C42.1194 3.4 42.5 3.01944 42.5 2.55V0.85C42.5 0.380558 42.1194 0 41.65 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="189.13" Y="109.23" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.55 0H0V40.375H2.55V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="192.52" Y="112.63" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.55 0H0V40.375H2.55V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="226.1" Y="112.63" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D4D4D4">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M3.4 15.3L0 0H23.8L20.4 15.3H3.4Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="196.35" Y="94.35" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D0D0D0">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M16.6709 48.0958V0.920766ZM16.6709 30.2458C2.78754 28.2624 -2.31246 23.4458 1.37087 15.7958C11.2875 14.6624 16.3875 19.4791 16.6709 30.2458ZM16.6709 18.3458C26.3042 14.6624 32.2542 8.71243 34.5209 0.495766C25.7375 -1.20423 19.7875 4.74577 16.6709 18.3458ZM16.6709 14.0958C9.02087 11.8291 6.04587 7.43743 7.74587 0.920766C14.5459 1.48743 17.5209 5.8791 16.6709 14.0958ZM16.6709 40.4458C27.1542 39.0291 33.2459 34.7791 34.9459 27.6958C27.0125 25.4291 20.9209 29.6791 16.6709 40.4458Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="191.79" Y="47.74" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M16.6709 48.0958V0.920766M16.6709 30.2458C2.78754 28.2624 -2.31246 23.4458 1.37087 15.7958C11.2875 14.6624 16.3875 19.4791 16.6709 30.2458ZM16.6709 18.3458C26.3042 14.6624 32.2542 8.71243 34.5209 0.495766C25.7375 -1.20423 19.7875 4.74577 16.6709 18.3458ZM16.6709 14.0958C9.02087 11.8291 6.04587 7.43743 7.74587 0.920766C14.5459 1.48743 17.5209 5.8791 16.6709 14.0958ZM16.6709 40.4458C27.1542 39.0291 33.2459 34.7791 34.9459 27.6958C27.0125 25.4291 20.9209 29.6791 16.6709 40.4458Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="191.79" Y="47.74" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C9C9C9" Thickness="0.425" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <!-- DesktopPreview · 642x383 · 26 个部件（设计稿 #847 #848 #849 #850 #851 #852 #853 #854 #855 #856 #857 #397 #859 #399 #861 #862 #862 #864 #404 #866 #870 #870 #870 #870 #871 #872） -->
+    <DrawingImage x:Key="Illus.DesktopPreview">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M634.75 0.75H6.75C3.43629 0.75 0.75 3.43629 0.75 6.75V354.75C0.75 358.064 3.43629 360.75 6.75 360.75H634.75C638.064 360.75 640.75 358.064 640.75 354.75V6.75C640.75 3.43629 638.064 0.75 634.75 0.75Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#D4D4D4" Thickness="1.5" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F5F5F5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M624 0H0V344H624V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="8" Y="8" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E9E9E9">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M376.35 0H1.95C0.873045 0 0 0.855633 0 1.91111V271.378C0 272.433 0.873045 273.289 1.95 273.289H376.35C377.427 273.289 378.3 272.433 378.3 271.378V1.91111C378.3 0.855633 377.427 0 376.35 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="31.4" Y="32.84" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FCFCFC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M363.675 0H0.975C0.436522 0 0 0.427817 0 0.955555V258.956C0 259.483 0.436522 259.911 0.975 259.911H363.675C364.213 259.911 364.65 259.483 364.65 258.956V0.955555C364.65 0.427817 364.213 0 363.675 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="38.23" Y="39.53" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F2F2F2">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M349.05 0H0V246.533H349.05V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="45.05" Y="46.22" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M37.05 72.6222C57.5121 72.6222 74.1 56.3652 74.1 36.3111C74.1 16.257 57.5121 0 37.05 0C16.5879 0 0 16.257 0 36.3111C0 56.3652 16.5879 72.6222 37.05 72.6222Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="263.45" Y="71.07" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E5E5E5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 25.1582C66.3 -1.59735 128.05 -7.01216 185.25 8.91376C242.45 24.8397 297.05 22.6101 349.05 2.22488V85.3582H0V25.1582Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="45.05" Y="207.4" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DDDDDD">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 23.8889C59.8 5.41481 119.925 1.27407 180.375 11.4667C240.825 21.6593 297.05 17.837 349.05 0V47.7778H0V23.8889Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="45.05" Y="244.98" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M6.825 0H0V259.911H6.825V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="212.75" Y="39.53" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M364.65 0H0V6.68889H364.65V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="38.23" Y="172.36" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#ECECEC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 0H82.875C73.125 87.2741 76.05 184.422 91.65 291.444H0V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="15.8" Y="23.29" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M4.39903 0.117065C-1.45097 103.317 0.174028 197.917 9.27403 283.917M26.824 0.117065C17.724 91.8504 19.674 186.45 32.674 283.917M49.249 0.117065C36.249 106.502 38.524 201.102 56.074 283.917">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="29.92" Y="26.16" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E2E2E2" Thickness="1.93" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#EFEFEF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M624 0H0V44.9111H624V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="8" Y="307.09" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 0.482605H624">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="8" Y="308.04" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E1E1E1" Thickness="0.965" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M95.55 0H1.95C0.873045 0 0 0.855634 0 1.91111V5.73333C0 6.78881 0.873045 7.64444 1.95 7.64444H95.55C96.627 7.64444 97.5 6.78881 97.5 5.73333V1.91111C97.5 0.855634 96.627 0 95.55 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="441.88" Y="253.58" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M5.85 0H0V90.7778H5.85V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="449.67" Y="261.22" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M5.85 0H0V90.7778H5.85V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="526.7" Y="261.22" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D4D4D4">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M7.8 34.4L0 0H54.6L46.8 34.4H7.8Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="458.45" Y="220.13" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D0D0D0">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M38.2401 108.142V2.07504ZM38.2401 68.0084C6.39008 63.5491 -5.30992 52.7195 3.14008 35.5195C25.8901 32.9713 37.5901 43.801 38.2401 68.0084ZM38.2401 41.2528C60.3401 32.9713 73.9901 19.5936 79.1901 1.11949C59.0401 -2.70273 45.3901 10.675 38.2401 41.2528ZM38.2401 31.6973C20.6901 26.601 13.8651 16.7269 17.7651 2.07504C33.3651 3.34912 40.1901 13.2232 38.2401 31.6973ZM38.2401 90.9417C62.2901 87.7565 76.2651 78.201 80.1651 62.275C61.9651 57.1787 47.9901 66.7343 38.2401 90.9417Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="447.99" Y="115.34" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M38.2401 108.142V2.07504M38.2401 68.0084C6.39008 63.5491 -5.30992 52.7195 3.14008 35.5195C25.8901 32.9713 37.5901 43.801 38.2401 68.0084ZM38.2401 41.2528C60.3401 32.9713 73.9901 19.5936 79.1901 1.11949C59.0401 -2.70273 45.3901 10.675 38.2401 41.2528ZM38.2401 31.6973C20.6901 26.601 13.8651 16.7269 17.7651 2.07504C33.3651 3.34912 40.1901 13.2232 38.2401 31.6973ZM38.2401 90.9417C62.2901 87.7565 76.2651 78.201 80.1651 62.275C61.9651 57.1787 47.9901 66.7343 38.2401 90.9417Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="447.99" Y="115.34" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C9C9C9" Thickness="0.965" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#EFEFEF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M624 0H0V25H624V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="8" Y="327" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#CECECE">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M9 0H1C0.447715 0 0 0.447715 0 1V9C0 9.55229 0.447715 10 1 10H9C9.55229 10 10 9.55229 10 9V1C10 0.447715 9.55229 0 9 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="287" Y="335" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#CECECE">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M9 0H1C0.447715 0 0 0.447715 0 1V9C0 9.55229 0.447715 10 1 10H9C9.55229 10 10 9.55229 10 9V1C10 0.447715 9.55229 0 9 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="308" Y="335" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#CECECE">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M9 0H1C0.447715 0 0 0.447715 0 1V9C0 9.55229 0.447715 10 1 10H9C9.55229 10 10 9.55229 10 9V1C10 0.447715 9.55229 0 9 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="329" Y="335" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#CECECE">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M9 0H1C0.447715 0 0 0.447715 0 1V9C0 9.55229 0.447715 10 1 10H9C9.55229 10 10 9.55229 10 9V1C10 0.447715 9.55229 0 9 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="350" Y="335" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DDDDDD">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M42 0H0V19H42V0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="299" Y="361" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#CFCFCF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M124 0H2C0.89543 0 0 0.89543 0 2C0 3.10457 0.89543 4 2 4H124C125.105 4 126 3.10457 126 2C126 0.89543 125.105 0 124 0Z">
+                            <PathGeometry.Transform>
+                                <TransformGroup>
+                                    <TranslateTransform X="257" Y="379" />
+                                </TransformGroup>
+                            </PathGeometry.Transform>
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <!-- SourceThumbA · 39x42 · 1 个部件（设计稿 #73） -->
+    <DrawingImage x:Key="Illus.SourceThumbA">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F5F5F5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M39 0H0V42H39V0Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E9E9E9">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.9844 3.03333H1.5844C1.51709 3.03333 1.46252 3.13779 1.46252 3.26666V36.1667C1.46252 36.2955 1.51709 36.4 1.5844 36.4H24.9844C25.0517 36.4 25.1063 36.2955 25.1063 36.1667V3.26666C25.1063 3.13779 25.0517 3.03333 24.9844 3.03333Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FCFCFC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.6187 3.84998H1.94998C1.91632 3.84998 1.88904 3.90221 1.88904 3.96664V35.4666C1.88904 35.5311 1.91632 35.5833 1.94998 35.5833H24.6187C24.6524 35.5833 24.6797 35.5311 24.6797 35.4666V3.96664C24.6797 3.90221 24.6524 3.84998 24.6187 3.84998Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F2F2F2">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.1313 4.66669H2.31567V34.7667H24.1313V4.66669Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M18.2812 16.5667C19.5601 16.5667 20.5968 14.5818 20.5968 12.1333C20.5968 9.68488 19.5601 7.70001 18.2812 7.70001C17.0023 7.70001 15.9656 9.68488 15.9656 12.1333C15.9656 14.5818 17.0023 16.5667 18.2812 16.5667Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E5E5E5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.31567 27.4167C6.45942 24.15 10.3188 23.4889 13.8938 25.4333C17.4688 27.3778 20.8813 27.1056 24.1313 24.6167V34.7667H2.31567V27.4167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DDDDDD">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.31567 31.85C6.05317 29.5945 9.81099 29.0889 13.5891 30.3333C17.3672 31.5778 20.8813 31.1111 24.1313 28.9333V34.7667H2.31567V31.85Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M13.2234 3.84998H12.7969V35.5833H13.2234V3.84998Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.6797 20.0667H1.88904V20.8833H24.6797V20.0667Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#ECECEC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0.487549 1.86664H5.66724C5.05786 12.5222 5.24067 24.3833 6.21567 37.45H0.487549V1.86664Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M1.58436 2.21667C1.21873 14.8167 1.32029 26.3667 1.88904 36.8667M2.98592 2.21667C2.41717 13.4167 2.53904 24.9667 3.35154 36.8667M4.38748 2.21667C3.57498 15.2056 3.71717 26.7556 4.81404 36.8667">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E2E2E2" Thickness="0.169" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#EFEFEF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M39 36.5167H0V42H39V36.5167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 36.6334H39">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E1E1E1" Thickness="0.084" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M33.0891 29.9833H27.2391C27.1718 29.9833 27.1172 30.0878 27.1172 30.2167V30.6833C27.1172 30.8122 27.1718 30.9167 27.2391 30.9167H33.0891C33.1564 30.9167 33.2109 30.8122 33.2109 30.6833V30.2167C33.2109 30.0878 33.1564 29.9833 33.0891 29.9833Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M27.9704 30.9167H27.6047V42H27.9704V30.9167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M32.7843 30.9167H32.4187V42H32.7843V30.9167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D4D4D4">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M28.6406 30.1L28.1531 25.9H31.5656L31.0781 30.1H28.6406Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D0D0D0">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M29.8594 26.25V13.3ZM29.8594 21.35C27.8687 20.8055 27.1375 19.4833 27.6656 17.3833C29.0875 17.0722 29.8187 18.3944 29.8594 21.35ZM29.8594 18.0833C31.2406 17.0722 32.0937 15.4389 32.4187 13.1833C31.1594 12.7166 30.3062 14.35 29.8594 18.0833ZM29.8594 16.9166C28.7625 16.2944 28.3359 15.0889 28.5797 13.3C29.5547 13.4555 29.9812 14.6611 29.8594 16.9166ZM29.8594 24.15C31.3625 23.7611 32.2359 22.5944 32.4797 20.65C31.3422 20.0278 30.4687 21.1944 29.8594 24.15Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M29.8594 26.25V13.3M29.8594 21.35C27.8687 20.8055 27.1375 19.4833 27.6656 17.3833C29.0875 17.0722 29.8187 18.3944 29.8594 21.35ZM29.8594 18.0833C31.2406 17.0722 32.0937 15.4389 32.4187 13.1833C31.1594 12.7166 30.3062 14.35 29.8594 18.0833ZM29.8594 16.9166C28.7625 16.2944 28.3359 15.0889 28.5797 13.3C29.5547 13.4555 29.9812 14.6611 29.8594 16.9166ZM29.8594 24.15C31.3625 23.7611 32.2359 22.5944 32.4797 20.65C31.3422 20.0278 30.4687 21.1944 29.8594 24.15Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C9C9C9" Thickness="0.084" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <!-- SourceThumbB · 39x42 · 1 个部件（设计稿 #77） -->
+    <DrawingImage x:Key="Illus.SourceThumbB">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F5F5F5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M39 0H0V42H39V0Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E9E9E9">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.9844 3.03333H1.5844C1.51709 3.03333 1.46252 3.13779 1.46252 3.26666V36.1667C1.46252 36.2955 1.51709 36.4 1.5844 36.4H24.9844C25.0517 36.4 25.1063 36.2955 25.1063 36.1667V3.26666C25.1063 3.13779 25.0517 3.03333 24.9844 3.03333Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FCFCFC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.6187 3.84998H1.94998C1.91632 3.84998 1.88904 3.90221 1.88904 3.96664V35.4666C1.88904 35.5311 1.91632 35.5833 1.94998 35.5833H24.6187C24.6524 35.5833 24.6797 35.5311 24.6797 35.4666V3.96664C24.6797 3.90221 24.6524 3.84998 24.6187 3.84998Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F2F2F2">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.1313 4.66669H2.31567V34.7667H24.1313V4.66669Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M18.2812 16.5667C19.5601 16.5667 20.5968 14.5818 20.5968 12.1333C20.5968 9.68488 19.5601 7.70001 18.2812 7.70001C17.0023 7.70001 15.9656 9.68488 15.9656 12.1333C15.9656 14.5818 17.0023 16.5667 18.2812 16.5667Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E5E5E5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.31567 27.4167C6.45942 24.15 10.3188 23.4889 13.8938 25.4333C17.4688 27.3778 20.8813 27.1056 24.1313 24.6167V34.7667H2.31567V27.4167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DDDDDD">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.31567 31.85C6.05317 29.5945 9.81099 29.0889 13.5891 30.3333C17.3672 31.5778 20.8813 31.1111 24.1313 28.9333V34.7667H2.31567V31.85Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M13.2234 3.84998H12.7969V35.5833H13.2234V3.84998Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.6797 20.0667H1.88904V20.8833H24.6797V20.0667Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#ECECEC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0.487549 1.86664H5.66724C5.05786 12.5222 5.24067 24.3833 6.21567 37.45H0.487549V1.86664Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M1.58436 2.21667C1.21873 14.8167 1.32029 26.3667 1.88904 36.8667M2.98592 2.21667C2.41717 13.4167 2.53904 24.9667 3.35154 36.8667M4.38748 2.21667C3.57498 15.2056 3.71717 26.7556 4.81404 36.8667">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E2E2E2" Thickness="0.169" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#EFEFEF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M39 36.5167H0V42H39V36.5167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 36.6334H39">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E1E1E1" Thickness="0.084" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M33.0891 29.9833H27.2391C27.1718 29.9833 27.1172 30.0878 27.1172 30.2167V30.6833C27.1172 30.8122 27.1718 30.9167 27.2391 30.9167H33.0891C33.1564 30.9167 33.2109 30.8122 33.2109 30.6833V30.2167C33.2109 30.0878 33.1564 29.9833 33.0891 29.9833Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M27.9704 30.9167H27.6047V42H27.9704V30.9167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M32.7843 30.9167H32.4187V42H32.7843V30.9167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D4D4D4">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M28.6406 30.1L28.1531 25.9H31.5656L31.0781 30.1H28.6406Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D0D0D0">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M29.8594 26.25V13.3ZM29.8594 21.35C27.8687 20.8055 27.1375 19.4833 27.6656 17.3833C29.0875 17.0722 29.8187 18.3944 29.8594 21.35ZM29.8594 18.0833C31.2406 17.0722 32.0937 15.4389 32.4187 13.1833C31.1594 12.7166 30.3062 14.35 29.8594 18.0833ZM29.8594 16.9166C28.7625 16.2944 28.3359 15.0889 28.5797 13.3C29.5547 13.4555 29.9812 14.6611 29.8594 16.9166ZM29.8594 24.15C31.3625 23.7611 32.2359 22.5944 32.4797 20.65C31.3422 20.0278 30.4687 21.1944 29.8594 24.15Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M29.8594 26.25V13.3M29.8594 21.35C27.8687 20.8055 27.1375 19.4833 27.6656 17.3833C29.0875 17.0722 29.8187 18.3944 29.8594 21.35ZM29.8594 18.0833C31.2406 17.0722 32.0937 15.4389 32.4187 13.1833C31.1594 12.7166 30.3062 14.35 29.8594 18.0833ZM29.8594 16.9166C28.7625 16.2944 28.3359 15.0889 28.5797 13.3C29.5547 13.4555 29.9812 14.6611 29.8594 16.9166ZM29.8594 24.15C31.3625 23.7611 32.2359 22.5944 32.4797 20.65C31.3422 20.0278 30.4687 21.1944 29.8594 24.15Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C9C9C9" Thickness="0.084" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="black">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M7.31248 8.16667L6.76404 11.6667ZM10.3594 11.3167L9.81091 14.8167ZM15.539 7.23334L14.9906 10.7333ZM20.1094 19.8333L19.5609 23.3333ZM9.44529 23.9167L8.89685 27.4167ZM17.0625 25.9L16.514 29.4Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M7.31248 8.16667L6.76404 11.6667M10.3594 11.3167L9.81091 14.8167M15.539 7.23334L14.9906 10.7333M20.1094 19.8333L19.5609 23.3333M9.44529 23.9167L8.89685 27.4167M17.0625 25.9L16.514 29.4">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#DADADA" Thickness="0.169" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <!-- SourceThumbC · 39x42 · 1 个部件（设计稿 #81） -->
+    <DrawingImage x:Key="Illus.SourceThumbC">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F5F5F5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M39 0H0V42H39V0Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E9E9E9">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.9844 3.03333H1.5844C1.51709 3.03333 1.46252 3.13779 1.46252 3.26666V36.1667C1.46252 36.2955 1.51709 36.4 1.5844 36.4H24.9844C25.0517 36.4 25.1063 36.2955 25.1063 36.1667V3.26666C25.1063 3.13779 25.0517 3.03333 24.9844 3.03333Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FCFCFC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.6187 3.84998H1.94998C1.91632 3.84998 1.88904 3.90221 1.88904 3.96664V35.4666C1.88904 35.5311 1.91632 35.5833 1.94998 35.5833H24.6187C24.6524 35.5833 24.6797 35.5311 24.6797 35.4666V3.96664C24.6797 3.90221 24.6524 3.84998 24.6187 3.84998Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F2F2F2">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.1313 4.66669H2.31567V34.7667H24.1313V4.66669Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M18.2812 16.5667C19.5601 16.5667 20.5968 14.5818 20.5968 12.1333C20.5968 9.68488 19.5601 7.70001 18.2812 7.70001C17.0023 7.70001 15.9656 9.68488 15.9656 12.1333C15.9656 14.5818 17.0023 16.5667 18.2812 16.5667Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E5E5E5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.31567 27.4167C6.45942 24.15 10.3188 23.4889 13.8938 25.4333C17.4688 27.3778 20.8813 27.1056 24.1313 24.6167V34.7667H2.31567V27.4167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DDDDDD">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.31567 31.85C6.05317 29.5945 9.81099 29.0889 13.5891 30.3333C17.3672 31.5778 20.8813 31.1111 24.1313 28.9333V34.7667H2.31567V31.85Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M13.2234 3.84998H12.7969V35.5833H13.2234V3.84998Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M24.6797 20.0667H1.88904V20.8833H24.6797V20.0667Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#ECECEC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0.487549 1.86664H5.66724C5.05786 12.5222 5.24067 24.3833 6.21567 37.45H0.487549V1.86664Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M1.58436 2.21667C1.21873 14.8167 1.32029 26.3667 1.88904 36.8667M2.98592 2.21667C2.41717 13.4167 2.53904 24.9667 3.35154 36.8667M4.38748 2.21667C3.57498 15.2056 3.71717 26.7556 4.81404 36.8667">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E2E2E2" Thickness="0.169" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#EFEFEF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M39 36.5167H0V42H39V36.5167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 36.6334H39">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E1E1E1" Thickness="0.084" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M33.0891 29.9833H27.2391C27.1718 29.9833 27.1172 30.0878 27.1172 30.2167V30.6833C27.1172 30.8122 27.1718 30.9167 27.2391 30.9167H33.0891C33.1564 30.9167 33.2109 30.8122 33.2109 30.6833V30.2167C33.2109 30.0878 33.1564 29.9833 33.0891 29.9833Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M27.9704 30.9167H27.6047V42H27.9704V30.9167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M32.7843 30.9167H32.4187V42H32.7843V30.9167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D4D4D4">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M28.6406 30.1L28.1531 25.9H31.5656L31.0781 30.1H28.6406Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D0D0D0">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M29.8594 26.25V13.3ZM29.8594 21.35C27.8687 20.8055 27.1375 19.4833 27.6656 17.3833C29.0875 17.0722 29.8187 18.3944 29.8594 21.35ZM29.8594 18.0833C31.2406 17.0722 32.0937 15.4389 32.4187 13.1833C31.1594 12.7166 30.3062 14.35 29.8594 18.0833ZM29.8594 16.9166C28.7625 16.2944 28.3359 15.0889 28.5797 13.3C29.5547 13.4555 29.9812 14.6611 29.8594 16.9166ZM29.8594 24.15C31.3625 23.7611 32.2359 22.5944 32.4797 20.65C31.3422 20.0278 30.4687 21.1944 29.8594 24.15Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M29.8594 26.25V13.3M29.8594 21.35C27.8687 20.8055 27.1375 19.4833 27.6656 17.3833C29.0875 17.0722 29.8187 18.3944 29.8594 21.35ZM29.8594 18.0833C31.2406 17.0722 32.0937 15.4389 32.4187 13.1833C31.1594 12.7166 30.3062 14.35 29.8594 18.0833ZM29.8594 16.9166C28.7625 16.2944 28.3359 15.0889 28.5797 13.3C29.5547 13.4555 29.9812 14.6611 29.8594 16.9166ZM29.8594 24.15C31.3625 23.7611 32.2359 22.5944 32.4797 20.65C31.3422 20.0278 30.4687 21.1944 29.8594 24.15Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C9C9C9" Thickness="0.084" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D0D0D0">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M22.6078 32.55H18.586C18.5523 32.55 18.525 32.6022 18.525 32.6667V33.1333C18.525 33.1978 18.5523 33.25 18.586 33.25H22.6078C22.6415 33.25 22.6688 33.1978 22.6688 33.1333V32.6667C22.6688 32.6022 22.6415 32.55 22.6078 32.55Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D9D9D9">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M22.7907 31.6166H19.1344C19.1008 31.6166 19.0735 31.6689 19.0735 31.7333V32.2C19.0735 32.2644 19.1008 32.3166 19.1344 32.3166H22.7907C22.8243 32.3166 22.8516 32.2644 22.8516 32.2V31.7333C22.8516 31.6689 22.8243 31.6166 22.7907 31.6166Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <!-- QueueThumb · 49x42 · 1 个部件（设计稿 #227） -->
+    <DrawingImage x:Key="Illus.QueueThumb">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F5F5F5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M49 0H0V42H49V0Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E9E9E9">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M31.3905 3.03333H1.99053C1.90596 3.03333 1.8374 3.13779 1.8374 3.26666V36.1667C1.8374 36.2955 1.90596 36.4 1.99053 36.4H31.3905C31.4751 36.4 31.5437 36.2955 31.5437 36.1667V3.26666C31.5437 3.13779 31.4751 3.03333 31.3905 3.03333Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FCFCFC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M30.9313 3.85001H2.4501C2.40781 3.85001 2.37354 3.90224 2.37354 3.96667V35.4667C2.37354 35.5311 2.40781 35.5833 2.4501 35.5833H30.9313C30.9736 35.5833 31.0079 35.5311 31.0079 35.4667V3.96667C31.0079 3.90224 30.9736 3.85001 30.9313 3.85001Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F2F2F2">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M30.3186 4.66666H2.90918V34.7667H30.3186V4.66666Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M22.9689 16.5667C24.5757 16.5667 25.8783 14.5818 25.8783 12.1333C25.8783 9.68488 24.5757 7.70001 22.9689 7.70001C21.3621 7.70001 20.0596 9.68488 20.0596 12.1333C20.0596 14.5818 21.3621 16.5667 22.9689 16.5667Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E5E5E5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.90918 27.4167C8.11543 24.15 12.9644 23.4889 17.4561 25.4333C21.9477 27.3778 26.2352 27.1056 30.3186 24.6167V34.7667H2.90918V27.4167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DDDDDD">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.90918 31.85C7.60501 29.5944 12.3264 29.0889 17.0732 30.3333C21.8201 31.5778 26.2352 31.1111 30.3186 28.9333V34.7667H2.90918V31.85Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M16.6141 3.85001H16.0781V35.5833H16.6141V3.85001Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M31.0079 20.0667H2.37354V20.8833H31.0079V20.0667Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#ECECEC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0.612305 1.86667H7.12012C6.35449 12.5222 6.58418 24.3833 7.80918 37.45H0.612305V1.86667Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M1.99082 2.21667C1.53145 14.8167 1.65905 26.3667 2.37364 36.8667M3.75176 2.21667C3.03718 13.4167 3.1903 24.9667 4.21114 36.8667M5.5127 2.21667C4.49187 15.2056 4.67051 26.7556 6.04864 36.8667">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E2E2E2" Thickness="0.189" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#EFEFEF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M49 36.5167H0V42H49V36.5167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 36.6333H49">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E1E1E1" Thickness="0.095" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M41.5734 29.9833H34.2234C34.1389 29.9833 34.0703 30.0878 34.0703 30.2167V30.6833C34.0703 30.8122 34.1389 30.9167 34.2234 30.9167H41.5734C41.658 30.9167 41.7266 30.8122 41.7266 30.6833V30.2167C41.7266 30.0878 41.658 29.9833 41.5734 29.9833Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M35.142 30.9167H34.6826V42H35.142V30.9167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M41.1908 30.9167H40.7314V42H41.1908V30.9167Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D4D4D4">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M35.9846 30.1L35.3721 25.9H39.6596L39.0471 30.1H35.9846Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D0D0D0">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M37.5157 26.25V13.3ZM37.5157 21.35C35.0147 20.8056 34.0959 19.4833 34.7595 17.3833C36.5459 17.0722 37.4647 18.3944 37.5157 21.35ZM37.5157 18.0833C39.2511 17.0722 40.323 15.4389 40.7314 13.1833C39.1491 12.7167 38.0772 14.35 37.5157 18.0833ZM37.5157 16.9167C36.1376 16.2944 35.6017 15.0889 35.9079 13.3C37.1329 13.4556 37.6689 14.6611 37.5157 16.9167ZM37.5157 24.15C39.4043 23.7611 40.5017 22.5944 40.8079 20.65C39.3787 20.0278 38.2814 21.1944 37.5157 24.15Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M37.5157 26.25V13.3M37.5157 21.35C35.0147 20.8056 34.0959 19.4833 34.7595 17.3833C36.5459 17.0722 37.4647 18.3944 37.5157 21.35ZM37.5157 18.0833C39.2511 17.0722 40.323 15.4389 40.7314 13.1833C39.1491 12.7167 38.0772 14.35 37.5157 18.0833ZM37.5157 16.9167C36.1376 16.2944 35.6017 15.0889 35.9079 13.3C37.1329 13.4556 37.6689 14.6611 37.5157 16.9167ZM37.5157 24.15C39.4043 23.7611 40.5017 22.5944 40.8079 20.65C39.3787 20.0278 38.2814 21.1944 37.5157 24.15Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C9C9C9" Thickness="0.095" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <!-- PlayerThumb · 49x45 · 1 个部件（设计稿 #92） -->
+    <DrawingImage x:Key="Illus.PlayerThumb">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F5F5F5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M49 0H0V45H49V0Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E9E9E9">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M31.3906 3.25H1.99065C1.90608 3.25 1.83752 3.36193 1.83752 3.5V38.75C1.83752 38.8881 1.90608 39 1.99065 39H31.3906C31.4752 39 31.5438 38.8881 31.5438 38.75V3.5C31.5438 3.36193 31.4752 3.25 31.3906 3.25Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FCFCFC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M30.9312 4.125H2.44998C2.40769 4.125 2.37341 4.18096 2.37341 4.25V38C2.37341 38.069 2.40769 38.125 2.44998 38.125H30.9312C30.9735 38.125 31.0078 38.069 31.0078 38V4.25C31.0078 4.18096 30.9735 4.125 30.9312 4.125Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F2F2F2">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M30.3188 5H2.90942V37.25H30.3188V5Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M22.9687 17.75C24.5755 17.75 25.8781 15.6234 25.8781 13C25.8781 10.3766 24.5755 8.25 22.9687 8.25C21.3619 8.25 20.0593 10.3766 20.0593 13C20.0593 15.6234 21.3619 17.75 22.9687 17.75Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#E5E5E5">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.90942 29.375C8.11567 25.875 12.9646 25.1667 17.4563 27.25C21.948 29.3334 26.2355 29.0417 30.3188 26.375V37.25H2.90942V29.375Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DDDDDD">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M2.90942 34.125C7.60526 31.7083 12.3266 31.1667 17.0735 32.5C21.8204 33.8333 26.2355 33.3333 30.3188 31V37.25H2.90942V34.125Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M16.6141 4.125H16.0781V38.125H16.6141V4.125Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="white">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M31.0078 21.5H2.37341V22.375H31.0078V21.5Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#ECECEC">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0.612549 2H7.12036C6.35474 13.4167 6.58442 26.125 7.80942 40.125H0.612549V2Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M1.99058 2.375C1.53121 15.875 1.65881 28.25 2.37339 39.5M3.75152 2.375C3.03693 14.375 3.19006 26.75 4.21089 39.5M5.51246 2.375C4.49162 16.2917 4.67027 28.6667 6.04839 39.5">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E2E2E2" Thickness="0.196" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#EFEFEF">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M49 39.125H0V45H49V39.125Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M0 39.25H49">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#E1E1E1" Thickness="0.098" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M41.5734 32.125H34.2234C34.1389 32.125 34.0703 32.2369 34.0703 32.375V32.875C34.0703 33.0131 34.1389 33.125 34.2234 33.125H41.5734C41.658 33.125 41.7266 33.0131 41.7266 32.875V32.375C41.7266 32.2369 41.658 32.125 41.5734 32.125Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M35.1422 33.125H34.6829V45H35.1422V33.125Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#DADADA">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M41.1906 33.125H40.7312V45H41.1906V33.125Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D4D4D4">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M35.9843 32.25L35.3718 27.75H39.6593L39.0468 32.25H35.9843Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#D0D0D0">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M37.5156 28.125V14.25ZM37.5156 22.875C35.0146 22.2917 34.0958 20.875 34.7594 18.625C36.5458 18.2917 37.4646 19.7084 37.5156 22.875ZM37.5156 19.375C39.251 18.2917 40.3229 16.5417 40.7312 14.125C39.1489 13.625 38.0771 15.375 37.5156 19.375ZM37.5156 18.125C36.1375 17.4584 35.6015 16.1667 35.9078 14.25C37.1328 14.4167 37.6687 15.7084 37.5156 18.125ZM37.5156 25.875C39.4041 25.4584 40.5015 24.2084 40.8078 22.125C39.3786 21.4584 38.2812 22.7084 37.5156 25.875Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M37.5156 28.125V14.25M37.5156 22.875C35.0146 22.2917 34.0958 20.875 34.7594 18.625C36.5458 18.2917 37.4646 19.7084 37.5156 22.875ZM37.5156 19.375C39.251 18.2917 40.3229 16.5417 40.7312 14.125C39.1489 13.625 38.0771 15.375 37.5156 19.375ZM37.5156 18.125C36.1375 17.4584 35.6015 16.1667 35.9078 14.25C37.1328 14.4167 37.6687 15.7084 37.5156 18.125ZM37.5156 25.875C39.4041 25.4584 40.5015 24.2084 40.8078 22.125C39.3786 21.4584 38.2812 22.7084 37.5156 25.875Z">
+                        </PathGeometry>
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C9C9C9" Thickness="0.098" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+        <!-- END GENERATED DESIGN ASSETS -->
     </Application.Resources>
 </Application>
