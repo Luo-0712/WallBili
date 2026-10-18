@@ -21,6 +21,7 @@ public sealed class TypographyTests
         var tooltip = new ToolTip { Content = "播放下一项 Next 12:48" };
         tooltip.ApplyTemplate();
         Assert.Same(UiTypography.Family, tooltip.FontFamily);
+        Assert.Equal(TextHintingMode.Animated, TextOptions.GetTextHintingMode(tooltip));
         return Task.CompletedTask;
     });
 
@@ -43,12 +44,13 @@ public sealed class TypographyTests
     });
 
     [Fact]
-    public Task TextUsesNaturalMetricsAndGrayscaleAntialiasing() => UiThread.Run(() =>
+    public Task TextUsesNaturalMetricsAndSymmetricGrayscaleAntialiasing() => UiThread.Run(() =>
     {
         var window = SampleWindow(new TextBlock { Text = "字形与间距 WallBili 12:48" });
         window.ApplyTemplate();
         Assert.Equal(TextFormattingMode.Ideal, TextOptions.GetTextFormattingMode(window));
         Assert.Equal(TextRenderingMode.Grayscale, TextOptions.GetTextRenderingMode(window));
+        Assert.Equal(TextHintingMode.Animated, TextOptions.GetTextHintingMode(window));
         window.Close();
         return Task.CompletedTask;
     });
@@ -103,6 +105,7 @@ public sealed class TypographyTests
         var menu = Assert.IsType<ContextMenu>(field.GetValue(tray));
         menu.ApplyTemplate();
         Assert.Same(UiTypography.Family, menu.FontFamily);
+        Assert.Equal(TextHintingMode.Animated, TextOptions.GetTextHintingMode(menu));
         var item = Assert.IsType<MenuItem>(menu.Items[0]);
         item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);

@@ -10,10 +10,14 @@
     <SolidColorBrush x:Key="FieldBorder" Color="#DADADA" />
     <SolidColorBrush x:Key="Hover" Color="#F4F4F4" />
     <SolidColorBrush x:Key="Surface" Color="#F8F8F8" />
+    <!-- In WPF, Ideal + Grayscale alone uses Natural rasterization without vertical AA.
+         Animated hinting selects Natural Symmetric (vertical AA) even for static text.
+         Keep grayscale blending while preserving fractional horizontal strokes and curves. -->
     <Style TargetType="ToolTip">
         <Setter Property="FontFamily" Value="{x:Static ui:UiTypography.Family}" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
         <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Animated" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Foreground" Value="{StaticResource Ink}" />
         <Setter Property="Background" Value="White" />
@@ -36,6 +40,7 @@
         <Setter Property="Background" Value="White" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
         <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Animated" />
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
     </Style>
@@ -45,6 +50,7 @@
         <Setter Property="Foreground" Value="{StaticResource Ink}" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
         <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Animated" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ContextMenu">
