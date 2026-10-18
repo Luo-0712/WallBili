@@ -1,511 +1,116 @@
 using System.ComponentModel;
-using System.Globalization;
-using System.IO;
-using System.Net;
-using System.Net.Http;
-using System.Net.NetworkInformation;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Threading;
-using Microsoft.Win32;
-using Microsoft.Data.Sqlite;
-using WallBili.Core;
-using WallBili.Infrastructure.Bilibili;
-using WallBili.Infrastructure.Storage;
-using WallBili.Player.Mpv;
+using System.Windows.Media;
+using WallBili.Desktop.Presentation;
+using WallBili.Desktop.Views;
 
 namespace WallBili.Desktop;
 
 public partial class MainWindow : Window
 {
-    private readonly HttpClient _http = new(new HttpClientHandler
-        { AutomaticDecompression = DecompressionMethods.All, UseCookies = false })
-        { Timeout = TimeSpan.FromSeconds(30) };
-    private readonly CancellationTokenSource _lifetime = new();
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(5) };
-    private readonly BilibiliClient _client;
-    private readonly AuthStore _authStore;
-    private readonly LibrarySession _library;
-    private readonly MpvQueuePlayer _player;
-    private readonly DesktopVideoHost _host;
-    private readonly TrayIcon _tray;
-    private DesktopPreferences _preferences;
-    private long _outputHandle;
-    private bool _exitRequested, _suspended, _powerSuspendRequested, _powerResumeRequested, _networkChanged;
-    private bool _outputRebindNeeded;
-    private Task _pending = Task.CompletedTask;
-    private bool _busy, _closing, _closed, _rendering, _ready, _loaded;
-    private string _mpvPath;
-    private readonly string _preferencesPath;
-
-    public MainWindow()
+    private readonly DesktopSession? _session;
+    private readonly ShellViewModel _viewModel;
+    private TrayIcon? _tray;
+    private bool _forceExit, _closing, _allowClose;
+    public MainWindow() : this(new DesktopSession(App.Options)) { }
+    private MainWindow(DesktopSession session) : this(session.ViewModel) => _session = session;
+    internal MainWindow(ShellViewModel viewModel)
     {
+        _viewModel = viewModel;
         InitializeComponent();
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WallBili");
-        _preferencesPath = Path.Combine(directory, "preferences.json");
-        _preferences = DesktopPreferences.Read(_preferencesPath);
-        _mpvPath = string.IsNullOrWhiteSpace(_preferences.MpvPath) ? "mpv" : _preferences.MpvPath;
-        MpvPathInput.Text = _mpvPath;
-        _host = new();
-        _outputHandle = _host.Handle.ToInt64();
-        _player = new(() => new() { ExecutablePath = Volatile.Read(ref _mpvPath), WindowId = Volatile.Read(ref _outputHandle),
-            FillWindow = _preferences.FillWindow });
-        _client = new BilibiliClient(_http);
-        _client.AccountChanged += (_, _) => _ = Dispatcher.InvokeAsync(RenderAccount);
-        _authStore = new(Path.Combine(directory, "auth.dat"));
-        _library = new(_client, new SqliteLibraryStore(Path.Combine(directory, "library.db")), _player,
-            selection: ToSelection());
-        _library.Changed += (_, _) => _ = Dispatcher.InvokeAsync(Render);
-        _tray = new(Dispatcher, ShowControls, TogglePause, () => Next_Click(this, new()), ToggleWallpaper, RequestExit);
-        RefreshSettings();
-        RefreshDesktop();
-        RenderAccount();
-        SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
-        SystemEvents.PowerModeChanged += PowerModeChanged;
-        NetworkChange.NetworkAvailabilityChanged += NetworkAvailabilityChanged;
-        NetworkChange.NetworkAddressChanged += NetworkAddressChanged;
-        _timer.Tick += async (_, _) =>
-        {
-            if (!_busy && !_closing && _ready) await MaintainAsync();
-        };
+        DataContext = viewModel;
+        _viewModel.PropertyChanged += ViewModelChanged;
+        _viewModel.LoginRequested += Login;
+        _viewModel.SignOutRequested += SignOut;
+        PlaybackSeek.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler((_, _) => CommitSeek()), true);
+        VolumeSlider.PreviewMouseLeftButtonDown += (_, _) => _viewModel.IsAdjustingVolume = true;
+        VolumeSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler((_, _) => CommitVolume()), true);
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_loaded) return;
-        _loaded = true;
-        if (Environment.GetCommandLineArgs().Contains("--background")) Hide();
-        await RunAsync(async ct =>
-        {
-            await RestoreAccountAsync(ct); // The stored session is restored before playback resumes.
-            await _library.InitializeAsync(ct);
-            if (!_host.Attached && !_preferences.ContinueAudioWhenHidden) await _library.PauseAsync(ct);
-            _ready = true; VolumeSlider.Value = _library.Snapshot.Playback.Volume;
-        }, initializing: true);
-        if (_ready) VolumeSlider.Value = _library.Snapshot.Playback.Volume;
-        _timer.Start();
+        if (_session is null) return;
+        if (!App.Options.Preview)
+            _tray = new(Dispatcher, ShowFromTray, () => _viewModel.PlayPauseCommand.Execute(null), () => _viewModel.NextCommand.Execute(null),
+                () => _viewModel.ToggleWallpaperCommand.Execute(null), ExitForSession);
+        await _session.InitializeAsync();
+        if (App.Options.Background && !App.Options.Preview) Hide();
     }
-
-    /// <summary>Applies the DPAPI-stored credentials. Confirmed expired credentials are removed from disk;
-    /// temporary network errors keep the file so the next start can try again.</summary>
-    private async Task RestoreAccountAsync(CancellationToken ct)
+    private void ViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        var stored = _authStore.Load();
-        if (string.IsNullOrEmpty(stored)) return;
-        try { await _client.ImportCookiesAsync(stored, ct); }
-        catch (ContentAccessException ex) when (ex.Kind == ContentFailureKind.AuthenticationRequired)
-        { _authStore.Clear(); }
+        if (e.PropertyName == nameof(ShellViewModel.CurrentTitle)) _tray?.SetStatus(_viewModel.CurrentTitle);
+        if (e.PropertyName == nameof(ShellViewModel.IsImportOpen) && _viewModel.IsImportOpen && IsActive)
+            Dispatcher.BeginInvoke(() => { FindVisual<ImportView>(ImportOverlay)?.FocusInput(); });
     }
-
-    private void RenderAccount()
-    {
-        if (_closing) return;
-        var account = _client.CurrentAccount();
-        AccountText.Text = account is null ? "未登录"
-            : BilibiliCookieText.Describe(account) + (account.IsVip ? " · 大会员" : "");
-        LoginButton.Content = account is null ? "登录" : "退出登录";
-    }
-
-    private async void Login_Click(object sender, RoutedEventArgs e)
-    {
-        if (_client.CurrentAccount() is not null)
-        {
-            // Leaving WallBili only: the all-site session stays valid for browsers and other devices.
-            _authStore.Clear();
-            await RunAsync(async ct =>
-            {
-                await _client.SignOutAsync();
-                await ReloadCurrentForAccountAsync(ct);
-            });
-            RenderAccount();
-            return;
-        }
-        var dialog = new LoginDialog(_client) { Owner = this };
-        dialog.ShowDialog();
-        if (dialog.CookieResult is not { } cookie) return;
-        _authStore.Save(cookie);
-        RenderAccount();
-        await RunAsync(ReloadCurrentForAccountAsync, "登录成功，正在刷新可用画质…");
-    }
-
-    /// <summary>After a login or logout the playing or paused current item is resolved again with the new
-    /// session; a stopped queue only keeps its settings, nothing starts playing by itself.</summary>
-    private async Task ReloadCurrentForAccountAsync(CancellationToken ct)
-    {
-        if (_library.Snapshot.Playback.Intent != PlaybackIntent.Stopped && _library.Snapshot.Current is not null)
-            await _library.ReloadAsync(ct);
-    }
-
-    private void RefreshSettings()
-    {
-        _rendering = true;
-        try
-        {
-            WallpaperBox.IsChecked = _preferences.WallpaperEnabled;
-            ContinueAudioBox.IsChecked = _preferences.ContinueAudioWhenHidden;
-            FitBox.SelectedIndex = _preferences.FillWindow ? 0 : 1;
-            DisplayBox.ItemsSource = new[] { new DisplayTarget("", 0, 0, 0, 0, false) }
-                .Concat(DesktopVideoHost.GetDisplays()).ToArray();
-            DisplayBox.SelectedItem = DisplayBox.Items.Cast<DisplayTarget>().FirstOrDefault(d => d.Id == _preferences.DisplayId)
-                ?? DisplayBox.Items[0];
-            try { StartupBox.IsChecked = LoginStartup.IsEnabled(); }
-            catch (System.Security.SecurityException) { StartupBox.IsChecked = false; }
-        }
-        finally { _rendering = false; }
-    }
-
-    private void RefreshDesktop()
-    {
-        if (_closing) return;
-        var snapshot = _library.Snapshot;
-        if (_host.Refresh(_preferences.WallpaperEnabled && !_suspended, _preferences.DisplayId,
-            snapshot.OutputActive))
-        {
-            Interlocked.Exchange(ref _outputHandle, _host.Handle.ToInt64());
-            _outputRebindNeeded = true;
-        }
-        DesktopStatus.Text = _host.Status;
-    }
-
-    private Task MaintainAsync() => RunAsync(async ct =>
-    {
-        if (_powerSuspendRequested)
-        {
-            _powerSuspendRequested = false; _suspended = true;
-            await _library.SuspendAsync(ct);
-        }
-        if (_powerResumeRequested)
-        {
-            _powerResumeRequested = false; _suspended = false;
-            RefreshSettings(); RefreshDesktop();
-            await _library.ResumeAsync(ct);
-            _outputRebindNeeded = false;
-        }
-        RefreshDesktop();
-        if (_suspended) return;
-        if (!_host.Attached && !_preferences.ContinueAudioWhenHidden && _library.Snapshot.Playback.Intent == PlaybackIntent.Playing)
-            await _library.PauseAsync(ct);
-        if (_outputRebindNeeded)
-        {
-            _outputRebindNeeded = false;
-            await _library.RebindOutputAsync(ct);
-        }
-        await _library.CheckpointAsync(ct);
-        var immediate = _networkChanged;
-        _networkChanged = false;
-        if (_library.Snapshot.RecoveryPending) await _library.RetryRecoveryAsync(immediate, ct);
-    });
-
-    private void OnSystemChange(Action action) => Dispatcher.BeginInvoke(() =>
-    {
-        if (_closing) return;
-        action();
-        if (_ready && !_busy) _ = MaintainAsync();
-    });
-    private void DisplaySettingsChanged(object? sender, EventArgs e) => OnSystemChange(RefreshSettings);
-    private void PowerModeChanged(object sender, PowerModeChangedEventArgs e) => OnSystemChange(() =>
-    {
-        if (e.Mode == PowerModes.Suspend) _powerSuspendRequested = true;
-        if (e.Mode == PowerModes.Resume) _powerResumeRequested = true;
-    });
-    private void NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
-    {
-        if (e.IsAvailable) OnSystemChange(() => _networkChanged = true);
-    }
-    private void NetworkAddressChanged(object? sender, EventArgs e) => OnSystemChange(() => _networkChanged = true);
-
-    private async void ApplyDesktop_Click(object sender, RoutedEventArgs e) => await RunAsync(async ct =>
-    {
-        var updated = _preferences with
-        {
-            WallpaperEnabled = WallpaperBox.IsChecked == true,
-            ContinueAudioWhenHidden = ContinueAudioBox.IsChecked == true,
-            DisplayId = (DisplayBox.SelectedItem as DisplayTarget)?.Id,
-            FillWindow = FitBox.SelectedIndex == 0
-        };
-        updated.Save(_preferencesPath);
-        _preferences = updated;
-        LoginStartup.SetEnabled(StartupBox.IsChecked == true);
-        await _library.SetVideoFitAsync(updated.FillWindow, ct);
-        RefreshDesktop();
-        if (!_host.Attached && !updated.ContinueAudioWhenHidden) await _library.PauseAsync(ct);
-    });
-
-    private void ShowControls() { Show(); WindowState = WindowState.Normal; Activate(); }
-    private void Hide_Click(object sender, RoutedEventArgs e) => Hide();
-    private void Exit_Click(object sender, RoutedEventArgs e) => RequestExit();
-    private void RequestExit() { _exitRequested = true; Close(); }
-    internal void ExitForSession() => RequestExit();
-    private async void TogglePause() => await RunAsync(ct => _library.Snapshot.Playback.Intent == PlaybackIntent.Playing
-        ? _library.PauseAsync(ct) : _library.PlayAsync(token: ct));
-    private void ToggleWallpaper()
-    {
-        if (_busy || !_ready) return;
-        WallpaperBox.IsChecked = !_preferences.WallpaperEnabled;
-        ApplyDesktop_Click(this, new());
-    }
-    private async void ImportVideo_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(ct => _library.ImportVideoAsync(VideoInput.Text.Trim(), ct), "正在导入视频及分 P…");
-    private async void ImportCollection_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(ct => _library.ImportCollectionAsync(BilibiliCollectionInput.Parse(CollectionInput.Text), ct), "正在读取合集全部分页与分 P…");
-    private async void ImportIds_Click(object sender, RoutedEventArgs e) => await RunAsync(ct =>
-    {
-        if (!long.TryParse(UploaderInput.Text, out var uid) || uid <= 0 ||
-            !long.TryParse(CollectionIdInput.Text, out var id) || id <= 0) throw new ArgumentException();
-        return _library.ImportCollectionAsync(new(uid, id, KindBox.SelectedIndex == 0 ? CollectionKind.Season : CollectionKind.Series), ct);
-    }, "正在读取合集全部分页与分 P…");
-    private async void RefreshSource_Click(object sender, RoutedEventArgs e)
-    {
-        if (SourcesBox.SelectedItem is SourceRow { Id.Length: > 0 } source)
-            await RunAsync(ct => _library.RefreshSourceAsync(source.Id, ct), "正在刷新来源，播放将继续…");
-    }
-    private async void RemoveSource_Click(object sender, RoutedEventArgs e)
-    {
-        if (SourcesBox.SelectedItem is SourceRow { Id.Length: > 0 } source)
-            await RunAsync(ct => _library.RemoveSourceAsync(source.Id, ct));
-    }
-    private async void Enqueue_Click(object sender, RoutedEventArgs e)
-    {
-        var selected = CatalogGrid.SelectedItems.Cast<EntryRow>().Select(row => row.Entry.Key).ToHashSet();
-        var keys = CatalogGrid.Items.Cast<EntryRow>().Where(row => selected.Contains(row.Entry.Key)).Select(row => row.Entry.Key).ToArray();
-        await RunAsync(ct => _library.EnqueueAsync(keys, ct));
-    }
-    private async void EnqueueAll_Click(object sender, RoutedEventArgs e)
-    {
-        var keys = CatalogGrid.Items.Cast<EntryRow>().Select(row => row.Entry.Key).ToArray();
-        await RunAsync(ct => _library.EnqueueAsync(keys, ct));
-    }
-    private async void DeleteEntry_Click(object sender, RoutedEventArgs e)
-    {
-        var keys = CatalogGrid.SelectedItems.Cast<EntryRow>().Select(row => row.Entry.Key).ToArray();
-        await RunAsync(async ct => { foreach (var key in keys) await _library.RemoveEntryAsync(key, ct); });
-    }
-    private async void EntryUp_Click(object sender, RoutedEventArgs e) => await MoveEntryAsync(-1);
-    private async void EntryDown_Click(object sender, RoutedEventArgs e) => await MoveEntryAsync(1);
-    private async Task MoveEntryAsync(int offset)
-    {
-        if (CatalogGrid.SelectedItem is not EntryRow row) return;
-        var visible = CatalogGrid.Items.Cast<EntryRow>().ToList();
-        var index = visible.IndexOf(row);
-        var target = Math.Clamp(index + offset, 0, visible.Count - 1);
-        var all = _library.Snapshot.Entries.ToList();
-        var delta = all.FindIndex(e => e.Key == visible[target].Entry.Key) - all.FindIndex(e => e.Key == row.Entry.Key);
-        await RunAsync(ct => _library.MoveEntryAsync(row.Entry.Key, delta, ct));
-    }
-    private async void QueueUp_Click(object sender, RoutedEventArgs e) => await MoveQueueAsync(-1);
-    private async void QueueDown_Click(object sender, RoutedEventArgs e) => await MoveQueueAsync(1);
-    private async Task MoveQueueAsync(int offset)
-    {
-        if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.MoveQueueAsync(row.Id, offset, ct));
-    }
-    private async void RemoveQueue_Click(object sender, RoutedEventArgs e)
-    {
-        if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.RemoveQueueAsync(row.Id, ct));
-    }
-    private async void PlaySelected_Click(object sender, RoutedEventArgs e) => await PlaySelectedAsync();
-    private async void Queue_DoubleClick(object sender, MouseButtonEventArgs e) => await PlaySelectedAsync();
-    private async Task PlaySelectedAsync()
-    {
-        if (QueueGrid.SelectedItem is QueueRow row) await RunAsync(ct => _library.PlayAsync(row.Id, ct), "正在解析并播放…");
-    }
-    private async void Play_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PlayAsync(token: ct));
-    private async void Pause_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PauseAsync(ct));
-    private async void Stop_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.StopAsync(ct));
-    private async void Previous_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.PreviousAsync(ct));
-    private async void Next_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.NextAsync(ct));
-    private async void Reload_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.ReloadAsync(ct));
-    private async void Seek_Click(object sender, RoutedEventArgs e) => await RunAsync(ct =>
-    {
-        if (!double.TryParse(SeekInput.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) ||
-            !double.IsFinite(seconds) || seconds < 0 || seconds > TimeSpan.MaxValue.TotalSeconds) throw new ArgumentException();
-        return _library.SeekAsync(TimeSpan.FromSeconds(seconds), ct);
-    });
-    private async void Volume_Click(object sender, RoutedEventArgs e) => await RunAsync(ct => _library.SetVolumeAsync(VolumeSlider.Value, ct));
-    private async void Mode_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (_rendering || !_ready) return;
-        await RunAsync(ct => _library.SetModeAsync(ModeBox.SelectedIndex == 0 ? QueueMode.Sequential : QueueMode.RepeatAll, ct));
-    }
-    private void Sources_Changed(object sender, SelectionChangedEventArgs e) { if (!_rendering && _ready) Render(); }
-
-    private void Render()
-    {
-        if (_closing) return;
-        _rendering = true;
-        try
-        {
-            var snapshot = _library.Snapshot;
-            var selectedSource = (SourcesBox.SelectedItem as SourceRow)?.Id ?? "";
-            var selectedEntries = CatalogGrid.SelectedItems.Cast<EntryRow>().Select(r => r.Entry.Key).ToHashSet();
-            var selectedQueue = (QueueGrid.SelectedItem as QueueRow)?.Id;
-            SourcesBox.ItemsSource = new[] { new SourceRow("", $"全部视频（{snapshot.Entries.Count}）") }
-                .Concat(snapshot.Sources.Select(s => new SourceRow(s.Id, $"{s.Title}（{s.Members.Count}）"))).ToArray();
-            SourcesBox.SelectedItem = SourcesBox.Items.Cast<SourceRow>().FirstOrDefault(s => s.Id == selectedSource) ?? SourcesBox.Items[0];
-            var source = snapshot.Sources.FirstOrDefault(s => s.Id == (SourcesBox.SelectedItem as SourceRow)?.Id);
-            CatalogGrid.ItemsSource = snapshot.Entries.Where(e => source is null || source.Members.Contains(e.Key))
-                .Select(e => new EntryRow(e, Availability(e))).ToArray();
-            foreach (var row in CatalogGrid.Items.Cast<EntryRow>()) if (selectedEntries.Contains(row.Entry.Key)) CatalogGrid.SelectedItems.Add(row);
-            var entries = snapshot.Entries.ToDictionary(e => e.Key);
-            QueueGrid.ItemsSource = snapshot.Queue.Select(q => new QueueRow(q.Id,
-                q.Id == snapshot.Playback.CurrentId ? "▶" : "", entries[q.Key].Title, Availability(entries[q.Key]))).ToArray();
-            QueueGrid.SelectedItem = QueueGrid.Items.Cast<QueueRow>().FirstOrDefault(q => q.Id == selectedQueue);
-            QueueTitle.Text = $"播放队列（{snapshot.Queue.Count}）";
-            var intent = snapshot.Playback.Intent switch { PlaybackIntent.Playing => "播放中", PlaybackIntent.Paused => "已暂停", _ => "已停止" };
-            CurrentText.Text = snapshot.Current is { } current ? $"{intent} · {current.Title}" : "尚未选择播放项";
-            var duration = snapshot.Current?.Duration ?? TimeSpan.Zero;
-            var position = TimeSpan.FromSeconds(snapshot.Playback.PositionSeconds);
-            PositionText.Text = $"{Format(position)} / {Format(duration)}";
-            Progress.Maximum = Math.Max(1, duration.TotalSeconds);
-            Progress.Value = Math.Clamp(position.TotalSeconds, 0, Progress.Maximum);
-            ModeBox.SelectedIndex = snapshot.Playback.Mode == QueueMode.Sequential ? 0 : 1;
-            StatusText.Text = snapshot.Notice;
-            RenderQuality(snapshot);
-            _tray.SetStatus(snapshot.Current?.Title ?? intent);
-            RefreshDesktop();
-        }
-        finally { _rendering = false; }
-    }
-
-    /// <summary>Shows the offered tiers as selections and the actually playing quality separately, so a
-    /// fallback never leaves the interface claiming the target tier is playing.</summary>
-    private void RenderQuality(LibrarySnapshot snapshot)
-    {
-        var media = snapshot.Media;
-        var videoRows = new List<QualityRow> { new(null, "自动：最高可用") };
-        var audioRows = new List<QualityRow> { new(null, "自动：最高普通音质") };
-        if (media is not null)
-        {
-            videoRows.AddRange(media.VideoOptions.Select(o => new QualityRow(o.Id, o.Label)));
-            audioRows.AddRange(media.AudioOptions.Select(o => new QualityRow(o.Id, o.Label, o.Special)));
-        }
-        // A persisted preference may target a tier this video does not offer; keep it visible instead of hiding it.
-        if (_preferences.PreferredVideoQualityId is { } videoId && videoRows.All(r => r.Id != videoId))
-            videoRows.Add(new(videoId, $"已保存画质档位 {videoId}"));
-        if (_preferences.PreferredAudioQualityId is { } audioId && audioRows.All(r => r.Id != audioId))
-            audioRows.Add(new(audioId, $"已保存音质档位 {audioId}"));
-        VideoQualityBox.ItemsSource = videoRows;
-        VideoQualityBox.SelectedItem = videoRows.FirstOrDefault(r => r.Id == _preferences.PreferredVideoQualityId) ?? videoRows[0];
-        AudioQualityBox.ItemsSource = audioRows;
-        AudioQualityBox.SelectedItem = audioRows.FirstOrDefault(r => r.Id == _preferences.PreferredAudioQualityId) ?? audioRows[0];
-        var noAudio = media is { NoAudio: true };
-        AudioQualityBox.IsEnabled = !noAudio;
-        QualityStatusText.Text = media is null
-            ? snapshot.Current is null ? "" : "正在获取可用画质…"
-            : noAudio
-                ? $"实际播放：{media.SelectedVideo}；音轨：无音轨"
-                : media.EmbeddedAudio
-                    ? $"实际播放：{media.SelectedVideo}；音轨：内嵌（不可单独选择）"
-                    : $"实际播放：{media.SelectedVideo} / {media.SelectedAudio}" +
-                      (media.VideoFallback is { } v ? $"；{v}" : "") +
-                      (media.AudioFallback is { } a ? $"；{a}" : "");
-    }
-
-    private async void VideoQuality_Changed(object sender, SelectionChangedEventArgs e) => await ApplyQualityPreferenceAsync();
-    private async void AudioQuality_Changed(object sender, SelectionChangedEventArgs e) => await ApplyQualityPreferenceAsync();
-
-    /// <summary>Saves the global preference and switches the current stream when one is active. The combo
-    /// shows the preference; the actually playing quality and any fallback appear in the status text.</summary>
-    private async Task ApplyQualityPreferenceAsync()
-    {
-        if (_rendering || !_ready || _closing) return;
-        var selection = ToSelection();
-        if (selection == ToSelection(_preferences)) return;
-        var updated = _preferences with
-        {
-            PreferredVideoQualityId = selection.VideoQualityId,
-            PreferredAudioQualityId = selection.AudioQualityId
-        };
-        updated.Save(_preferencesPath);
-        _preferences = updated;
-        await RunAsync(ct => _library.SetMediaSelectionAsync(selection, ct));
-    }
-
-    private MediaSelectionPreferences ToSelection(DesktopPreferences? preferences = null) => new(
-        (VideoQualityBox?.SelectedItem as QualityRow)?.Id ?? preferences?.PreferredVideoQualityId,
-        (AudioQualityBox?.SelectedItem as QualityRow)?.Id ?? preferences?.PreferredAudioQualityId);
-
-    private async Task RunAsync(Func<CancellationToken, Task> operation, string? notice = null, bool initializing = false)
-    {
-        if (_busy || _closing || (!_ready && !initializing)) return;
-        _busy = true;
-        Volatile.Write(ref _mpvPath, string.IsNullOrWhiteSpace(MpvPathInput.Text) ? "mpv" : MpvPathInput.Text.Trim());
-        ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = DesktopPanel.IsEnabled = false;
-        if (notice is not null) StatusText.Text = notice;
-        try
-        {
-            if (_preferences.MpvPath != _mpvPath)
-            {
-                _preferences = _preferences with { MpvPath = _mpvPath };
-                _preferences.Save(_preferencesPath);
-            }
-            _pending = operation(_lifetime.Token); await _pending; Render();
-        }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
-        catch (Exception ex)
-        {
-            StatusText.Text = ex switch
-            {
-                ContentAccessException content => $"来源访问失败（{Failure(content.Kind.ToString())}），请检查输入或稍后重试。",
-                MpvException player => $"播放器错误（{player.Code}），请检查 mpv 路径后重试。",
-                SqliteException or IOException or UnauthorizedAccessException => "本地资料读写失败，请检查磁盘空间及应用数据目录权限。",
-                System.Security.SecurityException => "登录启动设置无法写入，请检查当前用户的注册表权限。",
-                ArgumentException or FormatException => "输入无效，请检查链接、ID 或跳转秒数。",
-                OperationCanceledException or HttpRequestException => "网络请求失败或超时，请稍后重试。",
-                _ => "操作未完成，请检查来源与播放器配置后重试。"
-            };
-        }
-        finally
-        {
-            _busy = false;
-            _ready = _library.IsInitialized;
-            ImportPanel.IsEnabled = ListsPanel.IsEnabled = PlayerPanel.IsEnabled = DesktopPanel.IsEnabled = _ready && !_closing;
-        }
-    }
-
-    private static string Availability(CatalogEntry entry) => entry.Availability switch
-    {
-        EntryAvailability.Available => "可播放", EntryAvailability.Failed => "失败：" + Failure(entry.Failure), _ => "待播放"
-    };
-    private static string Failure(string? failure) => failure switch
-    {
-        "Removed" => "已失效", "AuthenticationRequired" => "需要权限", "Network" => "网络错误",
-        "RateLimited" => "请求频繁", "Unsupported" or "MediaFailed" => "播放失败", "Inaccessible" => "不可访问", _ => "访问错误"
-    };
-    private static string Format(TimeSpan time) => time.TotalHours >= 1
-        ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}" : $"{(int)time.TotalMinutes:00}:{time.Seconds:00}";
-
+    private void ShowFromTray() { Show(); WindowState = WindowState.Normal; Activate(); }
+    private void Hide_Click(object sender, RoutedEventArgs e) { if (_tray is null) WindowState = WindowState.Minimized; else Hide(); }
+    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+    private void Maximize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    private void Close_Click(object sender, RoutedEventArgs e) => Close();
+    internal void ExitForSession() { _forceExit = true; Close(); }
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
-        if (_closed) return;
+        if (_session is null || _allowClose) return;
         e.Cancel = true;
-        if (!_exitRequested) { Hide(); return; }
+        if (!_forceExit && _tray is not null) { Hide(); return; }
         if (_closing) return;
         _closing = true;
-        _timer.Stop(); _lifetime.Cancel();
-        SystemEvents.DisplaySettingsChanged -= DisplaySettingsChanged;
-        SystemEvents.PowerModeChanged -= PowerModeChanged;
-        NetworkChange.NetworkAvailabilityChanged -= NetworkAvailabilityChanged;
-        NetworkChange.NetworkAddressChanged -= NetworkAddressChanged;
-        IsEnabled = false;
-        try
-        {
-            try { await _pending; } catch { }
-            await _library.DisposeAsync();
-        }
-        catch
-        {
-            MessageBox.Show("最后一次进度未能保存，将使用上次保存的进度恢复。", "WallBili", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+        try { await _session.DisposeAsync(); }
         finally
         {
-            _tray.Dispose(); _host.Dispose(); _http.Dispose(); _lifetime.Dispose(); _closed = true; Close();
-            Application.Current.Shutdown();
+            _tray?.Dispose();
+            _viewModel.PropertyChanged -= ViewModelChanged;
+            _viewModel.LoginRequested -= Login; _viewModel.SignOutRequested -= SignOut;
+            _allowClose = true;
+            Close();
+            Application.Current?.Shutdown();
         }
     }
-
-    private sealed record SourceRow(string Id, string Title);
-    private sealed record EntryRow(CatalogEntry Entry, string Status);
-    private sealed record QueueRow(Guid Id, string Marker, string Title, string Status);
-    private sealed record QualityRow(string? Id, string Label, bool Special = false);
+    private void Window_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && _viewModel.IsImportOpen) { _viewModel.CloseImportCommand.Execute(null); e.Handled = true; }
+    }
+    private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || IsInteractive(e.OriginalSource as DependencyObject)) return;
+        if (e.ClickCount == 2) Maximize_Click(sender, e);
+        else if (Mouse.LeftButton == MouseButtonState.Pressed) DragMove();
+    }
+    private static bool IsInteractive(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is ButtonBase or TextBoxBase or ComboBox) return true;
+            element = element is Visual ? VisualTreeHelper.GetParent(element) : null;
+        }
+        return false;
+    }
+    private static T? FindVisual<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match) return match;
+            if (FindVisual<T>(child) is { } nested) return nested;
+        }
+        return null;
+    }
+    private void Seek_Down(object sender, MouseButtonEventArgs e) => _viewModel.IsSeeking = true;
+    private void Seek_Up(object sender, MouseButtonEventArgs e) => CommitSeek();
+    private void Seek_KeyUp(object sender, KeyEventArgs e) => CommitSeek();
+    private void CommitSeek() { if (_viewModel.HasCurrent) _viewModel.SeekCommand.Execute(null); else _viewModel.IsSeeking = false; }
+    private void CommitVolume() { _viewModel.IsAdjustingVolume = false; _viewModel.VolumeCommand.Execute(null); }
+    private void Volume_Commit(object sender, MouseButtonEventArgs e) => CommitVolume();
+    private void Volume_KeyUp(object sender, KeyEventArgs e) => CommitVolume();
+    private async void Login()
+    {
+        if (_session?.Client is null) { _viewModel.Report("预览中使用示例内容。正常启动后可以登录 B 站账号。"); return; }
+        var dialog = new LoginDialog(_session.Client) { Owner = this };
+        if (dialog.ShowDialog() == true && dialog.CookieResult is { } cookies)
+            await _viewModel.RunAsync(() => { _session.SaveLogin(cookies); return Task.CompletedTask; });
+    }
+    private async void SignOut() { if (_session is not null) await _viewModel.RunAsync(() => _session.SignOutAsync()); }
 }

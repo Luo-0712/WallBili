@@ -1,0 +1,79 @@
+<UserControl x:Class="WallBili.Desktop.Views.SettingsView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="clr-namespace:WallBili.Desktop.Presentation">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="4.2*" />
+            <ColumnDefinition Width="60" />
+            <ColumnDefinition Width="3*" />
+        </Grid.ColumnDefinitions>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,8,0">
+                <DockPanel Margin="0,0,0,22">
+                    <TextBlock DockPanel.Dock="Right" Text="显示效果示意" FontSize="11" Foreground="#999999" />
+                    <TextBlock Text="桌面预览" Style="{StaticResource SectionTitle}" />
+                </DockPanel>
+                <Border BorderBrush="#DADADA" BorderThickness="1.5" CornerRadius="6" Padding="12">
+                    <ui:LandscapeArt Height="330" />
+                </Border>
+                <Rectangle Width="50" Height="20" Fill="#E5E5E5" />
+                <Border Background="#D0D0D0" Width="140" Height="4" CornerRadius="2" />
+                <TextBlock Text="{Binding DisplayDescription}" FontSize="12" Foreground="#808080" Margin="0,28,0,32" TextWrapping="Wrap" />
+                <TextBlock Text="画面适配" FontSize="13" />
+                <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                    <RadioButton GroupName="Fit" Content="填充（裁切）" IsChecked="{Binding FillWindow, Mode=OneWay}" Checked="Fill_Checked" Tag="fill" />
+                    <RadioButton GroupName="Fit" Content="适应（留边）" IsChecked="{Binding FillWindow, Converter={StaticResource EqualsValue}, ConverterParameter=False, Mode=OneWay}" Checked="Fill_Checked" Tag="fit" Margin="56,0,0,0" />
+                </StackPanel>
+                <TextBlock Text="{Binding DesktopStatus}" FontSize="12" Foreground="#808080" TextWrapping="Wrap" Margin="0,32,0,0" />
+            </StackPanel>
+        </ScrollViewer>
+        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,8,16">
+                <DockPanel>
+                    <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding IsWallpaperEnabled}" AutomationProperties.Name="启用桌面画面" />
+                    <TextBlock Text="桌面画面" Style="{StaticResource SectionTitle}" />
+                </DockPanel>
+                <TextBlock Text="{Binding DesktopHint}" FontSize="12" Foreground="#808080" Margin="0,12,0,30" TextWrapping="Wrap" />
+                <TextBlock Text="目标显示器" FontSize="12" Foreground="#808080" />
+                <ComboBox ItemsSource="{Binding Displays}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedDisplay}" Margin="0,10,0,12" AutomationProperties.Name="目标显示器" />
+                <TextBlock Text="当前版本一次使用一块屏幕。" FontSize="11" Foreground="#999999" Margin="0,0,0,30" />
+                <DockPanel>
+                    <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding ContinueAudio}" AutomationProperties.Name="隐藏画面时继续音乐" />
+                    <TextBlock Text="隐藏画面时继续音乐" FontSize="13" />
+                </DockPanel>
+                <TextBlock Text="关闭画面时，继续播放当前队列。" FontSize="12" Foreground="#808080" Margin="0,12,0,28" />
+                <Border Height="1" Background="#ECECEC" />
+                <DockPanel Margin="0,28,0,0">
+                    <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding AutoStart}" AutomationProperties.Name="登录后在托盘启动" />
+                    <TextBlock Text="登录后在托盘启动" FontSize="13" />
+                </DockPanel>
+                <TextBlock Text="开启后，下次登录恢复上次的播放进度。" FontSize="12" Foreground="#808080" Margin="0,12,0,28" TextWrapping="Wrap" />
+                <Border Height="1" Background="#ECECEC" />
+                <TextBlock Text="播放器" Style="{StaticResource SectionTitle}" Margin="0,28,0,18" />
+                <TextBlock Text="mpv 路径" FontSize="12" Foreground="#808080" />
+                <DockPanel Margin="0,10,0,10">
+                    <Button DockPanel.Dock="Right" Content="浏览" Click="Browse_Click" Margin="10,0,0,0" />
+                    <TextBox Text="{Binding MpvPath, UpdateSourceTrigger=PropertyChanged}" FontSize="12" AutomationProperties.Name="mpv 播放器路径" />
+                </DockPanel>
+                <TextBlock Text="路径修改后，下次加载视频时生效。" FontSize="11" Foreground="#999999" TextWrapping="Wrap" Margin="0,0,0,28" />
+                <Border Height="1" Background="#ECECEC" />
+                <TextBlock Text="画质与音质" Style="{StaticResource SectionTitle}" Margin="0,28,0,20" />
+                <TextBlock Text="视频画质" FontSize="12" Foreground="#808080" />
+                <ComboBox ItemsSource="{Binding VideoOptions}" DisplayMemberPath="Label" SelectedValuePath="Id" SelectedValue="{Binding VideoQualityId}" Margin="0,9,0,18" AutomationProperties.Name="视频画质" />
+                <TextBlock Text="音频音质" FontSize="12" Foreground="#808080" />
+                <ComboBox ItemsSource="{Binding AudioOptions}" DisplayMemberPath="Label" SelectedValuePath="Id" SelectedValue="{Binding AudioQualityId}" Margin="0,9,0,12" AutomationProperties.Name="音频音质" />
+                <TextBlock Text="{Binding QualityStatus}" FontSize="11" Foreground="#999999" TextWrapping="Wrap" />
+                <Button Content="应用画质与音质" Command="{Binding ApplyQualityCommand}" HorizontalAlignment="Left" Margin="0,18,0,26" />
+                <Border Height="1" Background="#ECECEC" />
+                <TextBlock Text="B 站账号" Style="{StaticResource SectionTitle}" Margin="0,28,0,16" />
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="退出登录" Command="{Binding SignOutCommand}" Visibility="{Binding IsSignedIn, Converter={StaticResource VisibleWhen}}" />
+                    <TextBlock Text="{Binding AccountText}" FontSize="13" />
+                </DockPanel>
+                <TextBlock Text="{Binding SettingsStatus}" FontSize="12" Foreground="#555555" Margin="0,18,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                    <ui:LineIcon Kind="Tray" Width="16" Height="16" Foreground="#808080" />
+                    <TextBlock Text="关闭窗口仅收起到托盘，音乐继续播放。" FontSize="11" Foreground="#999999" Margin="10,0,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

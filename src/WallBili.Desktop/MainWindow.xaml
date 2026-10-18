@@ -1,143 +1,278 @@
-<Window x:Class="WallBili.Desktop.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="WallBili · 视频桌面" Width="1180" Height="960" MinWidth="960" MinHeight="800"
-        Background="#F5F6F8" Loaded="Window_Loaded" Closing="Window_Closing">
-    <Grid Margin="24">
+<Window x:Class="WallBili.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="clr-namespace:WallBili.Desktop.Presentation" xmlns:views="clr-namespace:WallBili.Desktop.Views" xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework" Title="WallBili" Style="{StaticResource {x:Type Window}}" Width="1440" Height="960" MinWidth="1024" MinHeight="720" WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize" Loaded="Window_Loaded" Closing="Window_Closing" PreviewKeyDown="Window_KeyDown">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <Style x:Key="SidebarSourceButton" TargetType="Button" BasedOn="{StaticResource FlatButton}">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+    </Window.Resources>
+    <Grid x:Name="ShellRoot" Background="White">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="76" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="96" />
         </Grid.RowDefinitions>
-        <DockPanel Margin="0,0,0,16">
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                <TextBlock x:Name="AccountText" Text="未登录" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="#536170"/>
-                <Button x:Name="LoginButton" Content="登录" Click="Login_Click" Margin="0,0,8,0"/>
-                <Button Content="收起到托盘" Click="Hide_Click"/><Button Content="退出" Click="Exit_Click"/>
-            </StackPanel>
-            <TextBlock Text="WallBili" FontSize="28" FontWeight="SemiBold" Foreground="#17212D"/>
-            <TextBlock Text="视频桌面与连续播放" VerticalAlignment="Center" Foreground="#536170" Margin="18,0,0,0"/>
-        </DockPanel>
-        <StackPanel Grid.Row="1" x:Name="ImportPanel" Margin="0,0,0,16">
-            <Grid Margin="0,0,0,8">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Text="视频链接 / BV" VerticalAlignment="Center"/>
-                <TextBox x:Name="VideoInput" Grid.Column="1" ToolTip="导入视频及其全部分 P"/>
-                <Button Grid.Column="2" Content="添加视频" Click="ImportVideo_Click" Margin="8,0,0,0"/>
-            </Grid>
-            <Grid Margin="0,0,0,8">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Text="合集 / 系列链接" VerticalAlignment="Center"/>
-                <TextBox x:Name="CollectionInput" Grid.Column="1" ToolTip="space.bilibili.com/UP主ID/lists/合集ID?type=season 或 type=series"/>
-                <Button Grid.Column="2" Content="导入合集" Click="ImportCollection_Click" Margin="8,0,0,0"/>
-            </Grid>
-            <WrapPanel>
-                <TextBlock Text="也可填写 UP 主 ID" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBox x:Name="UploaderInput" Width="125"/>
-                <TextBlock Text="合集 ID" VerticalAlignment="Center" Margin="12,0,8,0"/>
-                <TextBox x:Name="CollectionIdInput" Width="125"/>
-                <ComboBox x:Name="KindBox" SelectedIndex="0" Width="100" Margin="10,0,8,0" VerticalContentAlignment="Center">
-                    <ComboBoxItem Content="合集"/><ComboBoxItem Content="系列"/>
-                </ComboBox>
-                <Button Content="按 ID 导入" Click="ImportIds_Click"/>
-            </WrapPanel>
-        </StackPanel>
-        <Grid Grid.Row="2" x:Name="ListsPanel">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <DockPanel Margin="0,0,14,0">
-                <TextBlock DockPanel.Dock="Top" Text="我的来源" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                    <Button Content="刷新所选来源" Click="RefreshSource_Click" Margin="0,0,0,6"/>
-                    <Button Content="移除来源" Click="RemoveSource_Click" Margin="0" ToolTip="目录与队列会保留"/>
+        <Grid Grid.RowSpan="3" IsEnabled="{Binding IsImportOpen, Converter={StaticResource EqualsValue}, ConverterParameter=False}">
+            <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" />
+            <Grid Margin="20,0,20,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="96" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="190" />
+                </Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Top" Margin="8,27,0,0" MouseLeftButtonDown="TitleBar_MouseDown">
+                    <ui:LineIcon Kind="Sound" Width="25" Height="25" Margin="0,0,12,0" Foreground="{StaticResource Ink}" />
+                    <StackPanel>
+                        <TextBlock Text="WallBili" FontSize="20" FontWeight="SemiBold" />
+                        <TextBlock Text="桌面音乐播放器" FontSize="10" Foreground="{StaticResource Muted}" Margin="0,2,0,0" />
+                    </StackPanel>
                 </StackPanel>
-                <ListBox x:Name="SourcesBox" DisplayMemberPath="Title" SelectionChanged="Sources_Changed"/>
-            </DockPanel>
-            <DockPanel Grid.Column="1" Margin="0,0,14,0">
-                <TextBlock DockPanel.Dock="Top" Text="视频目录" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                    <Button Content="加入队列" Click="Enqueue_Click"/><Button Content="全部加入" Click="EnqueueAll_Click"/>
-                    <Button Content="↑" Click="EntryUp_Click" ToolTip="目录上移"/><Button Content="↓" Click="EntryDown_Click" ToolTip="目录下移"/>
-                    <Button Content="删除" Click="DeleteEntry_Click"/>
-                </WrapPanel>
-                <DataGrid x:Name="CatalogGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
-                          SelectionMode="Extended" SelectionUnit="FullRow" HeadersVisibility="Column" CanUserSortColumns="False">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="标题" Binding="{Binding Entry.Title}" Width="*"/>
-                        <DataGridTextColumn Header="UP 主" Binding="{Binding Entry.Uploader}" Width="80"/>
-                        <DataGridTextColumn Header="分 P" Binding="{Binding Entry.Page}" Width="45"/>
-                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="105"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </DockPanel>
-            <DockPanel Grid.Column="2">
-                <TextBlock x:Name="QueueTitle" DockPanel.Dock="Top" Text="播放队列" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                    <Button Content="播放所选" Click="PlaySelected_Click"/>
-                    <Button Content="↑" Click="QueueUp_Click" ToolTip="队列上移"/><Button Content="↓" Click="QueueDown_Click" ToolTip="队列下移"/>
-                    <Button Content="移除" Click="RemoveQueue_Click"/>
-                </WrapPanel>
-                <DataGrid x:Name="QueueGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
-                          SelectionMode="Single" HeadersVisibility="Column" CanUserSortColumns="False" MouseDoubleClick="Queue_DoubleClick">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="" Binding="{Binding Marker}" Width="32"/>
-                        <DataGridTextColumn Header="标题" Binding="{Binding Title}" Width="*"/>
-                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="100"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </DockPanel>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,24,0,0">
+                        <RadioButton x:Name="WorkspaceNav" AutomationProperties.Name="播放工作台" GroupName="Navigation" Style="{StaticResource Navigation}" IsChecked="{Binding Page, Converter={StaticResource EqualsValue}, ConverterParameter=Workspace, Mode=OneWay}" Command="{Binding NavigateCommand}" CommandParameter="Workspace">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:LineIcon Kind="Home" Width="18" Height="18" Margin="0,0,12,0" />
+                                <TextBlock Text="播放工作台" FontSize="13" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="LibraryNav" AutomationProperties.Name="我的片库" GroupName="Navigation" Style="{StaticResource Navigation}" Margin="0,9,0,0" IsChecked="{Binding Page, Converter={StaticResource EqualsValue}, ConverterParameter=Library, Mode=OneWay}" Command="{Binding NavigateCommand}" CommandParameter="Library">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:LineIcon Kind="Library" Width="18" Height="18" Margin="0,0,12,0" />
+                                <TextBlock Text="我的片库" FontSize="13" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="QueueNav" AutomationProperties.Name="播放队列" GroupName="Navigation" Style="{StaticResource Navigation}" Margin="0,9,0,0" IsChecked="{Binding Page, Converter={StaticResource EqualsValue}, ConverterParameter=Queue, Mode=OneWay}" Command="{Binding NavigateCommand}" CommandParameter="Queue">
+                            <Grid Width="136">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="30" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="24" />
+                                </Grid.ColumnDefinitions>
+                                <ui:LineIcon Kind="Queue" Width="18" Height="18" HorizontalAlignment="Left" />
+                                <TextBlock Grid.Column="1" Text="播放队列" FontSize="13" />
+                                <TextBlock Grid.Column="2" Text="{Binding QueueCount}" FontSize="11" Foreground="{StaticResource Muted}" HorizontalAlignment="Right" />
+                            </Grid>
+                        </RadioButton>
+                        <DockPanel Margin="10,48,6,14">
+                            <ui:LineIcon DockPanel.Dock="Right" Kind="Chevron" Width="12" Height="12" />
+                            <TextBlock Text="我的来源" Style="{StaticResource SecondaryText}" />
+                        </DockPanel>
+                        <ItemsControl ItemsSource="{Binding SourceRows}" MaxHeight="180">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource SidebarSourceButton}" Command="{Binding DataContext.FilterSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Id}" ToolTip="{Binding Title}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="14" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="24" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Width="1" Height="12" Background="#DADADA" HorizontalAlignment="Left" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Title}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Count}" Foreground="{StaticResource Muted}" HorizontalAlignment="Right" FontSize="11" />
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Margin="0,16,0,0" HorizontalContentAlignment="Left" Style="{StaticResource FlatButton}" Padding="12,8" Command="{Binding OpenImportCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:LineIcon Kind="Plus" Width="16" Height="16" Margin="0,0,12,0" />
+                                <TextBlock Text="添加来源" FontSize="13" />
+                            </StackPanel>
+                        </Button>
+                        <Border Height="1" Background="{StaticResource Line}" Margin="10,28,10,18" />
+                        <RadioButton x:Name="SettingsNav" AutomationProperties.Name="桌面与后台" GroupName="Navigation" Style="{StaticResource Navigation}" IsChecked="{Binding Page, Converter={StaticResource EqualsValue}, ConverterParameter=Settings, Mode=OneWay}" Command="{Binding NavigateCommand}" CommandParameter="Settings">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:LineIcon Kind="Settings" Width="18" Height="18" Margin="0,0,12,0" />
+                                <TextBlock Text="桌面与后台" FontSize="13" />
+                            </StackPanel>
+                        </RadioButton>
+                    </StackPanel>
+                </ScrollViewer>
+                <StackPanel Grid.Row="2" VerticalAlignment="Bottom" Margin="8,0,8,18">
+                    <TextBlock Text="后台播放" FontSize="11" Foreground="{StaticResource Muted}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                        <Ellipse Width="3" Height="3" Fill="#555555" Margin="0,0,7,0" />
+                        <TextBlock Text="{Binding PlaybackStatus}" FontSize="12" Foreground="{StaticResource Body}" />
+                    </StackPanel>
+                    <TextBlock Text="关闭窗口将收起到托盘" FontSize="10" Foreground="{StaticResource Faint}" Margin="0,9,0,18" />
+                    <Border Height="1" Background="{StaticResource Line}" />
+                    <Button Style="{StaticResource FlatButton}" Click="Hide_Click" HorizontalContentAlignment="Left" Margin="-4,16,0,12">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:LineIcon Kind="Tray" Width="17" Height="17" Margin="0,0,12,0" />
+                            <TextBlock Text="收起到托盘" FontSize="12" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Text="WallBili for Windows" FontSize="10" Foreground="{StaticResource Faint}" />
+                </StackPanel>
+            </Grid>
         </Grid>
-        <Border Grid.Row="3" Background="White" Padding="16" CornerRadius="8" Margin="0,18,0,12">
-            <StackPanel x:Name="PlayerPanel">
-                <TextBlock x:Name="CurrentText" Text="尚未选择播放项" FontSize="16" FontWeight="SemiBold"/>
-                <TextBlock x:Name="PositionText" Text="00:00 / 00:00" Foreground="#536170" Margin="0,5,0,8"/>
-                <ProgressBar x:Name="Progress" Height="5" Maximum="1" Margin="0,0,0,12"/>
-                <WrapPanel Margin="0,0,0,10">
-                    <Button Content="上一项" Click="Previous_Click"/><Button Content="播放 / 继续" Click="Play_Click"/>
-                    <Button Content="暂停" Click="Pause_Click"/><Button Content="停止" Click="Stop_Click"/>
-                    <Button Content="下一项" Click="Next_Click"/><Button Content="重新取流" Click="Reload_Click"/>
-                    <ComboBox x:Name="ModeBox" Width="100" SelectedIndex="0" SelectionChanged="Mode_Changed" VerticalContentAlignment="Center">
-                        <ComboBoxItem Content="顺序播放"/><ComboBoxItem Content="列表循环"/>
-                    </ComboBox>
-                </WrapPanel>
-                <WrapPanel Margin="0,0,0,10">
-                    <TextBlock Text="画质" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <ComboBox x:Name="VideoQualityBox" Width="170" DisplayMemberPath="Label"
-                              SelectionChanged="VideoQuality_Changed" VerticalContentAlignment="Center" ToolTip="自动模式选择最高可用画质；手动选择会保存为全局偏好"/>
-                    <TextBlock Text="音质" VerticalAlignment="Center" Margin="14,0,8,0"/>
-                    <ComboBox x:Name="AudioQualityBox" Width="170" DisplayMemberPath="Label"
-                              SelectionChanged="AudioQuality_Changed" VerticalContentAlignment="Center" ToolTip="自动模式选择最高普通音质；无损和杜比需手动选择"/>
-                    <TextBlock x:Name="QualityStatusText" Text="" VerticalAlignment="Center" Foreground="#536170"
-                               Margin="14,0,0,0" TextWrapping="Wrap"/>
-                </WrapPanel>
-                <WrapPanel Margin="0,0,0,10">
-                    <TextBlock Text="跳转（秒）" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBox x:Name="SeekInput" Width="85" Text="0"/><Button Content="跳转" Click="Seek_Click" Margin="8,0,18,0"/>
-                    <TextBlock Text="音量" VerticalAlignment="Center"/>
-                    <Slider x:Name="VolumeSlider" Width="130" Minimum="0" Maximum="100" Value="70" VerticalAlignment="Center" Margin="10,0"/>
-                    <Button Content="设置音量" Click="Volume_Click"/>
-                </WrapPanel>
-                <DockPanel>
-                    <TextBlock Text="mpv 路径" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                    <TextBox x:Name="MpvPathInput" ToolTip="mpv.exe 完整路径；修改后下次加载生效"/>
-                </DockPanel>
+        <Grid Grid.Column="1" MouseLeftButtonDown="TitleBar_MouseDown" Background="White" IsEnabled="{Binding IsImportOpen, Converter={StaticResource EqualsValue}, ConverterParameter=False}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="138" />
+            </Grid.ColumnDefinitions>
+            <Grid Margin="44,18,24,18" MaxWidth="500" HorizontalAlignment="Left" Width="360">
+                <ui:LineIcon Kind="Search" Width="18" Height="18" HorizontalAlignment="Left" Foreground="{StaticResource Muted}" />
+                <TextBox x:Name="GlobalSearch" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" BorderThickness="0" Padding="0" Margin="32,0,0,0" MinHeight="30" FontSize="12" Background="Transparent" AutomationProperties.Name="筛选标题、UP 主或 BV 号" />
+                <TextBlock Text="筛选标题、UP 主或 BV 号" FontSize="12" Foreground="{StaticResource Faint}" Margin="32,0,0,0" IsHitTestVisible="False">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SearchText}" Value="">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <TextBlock Text="设计预览" FontSize="11" Foreground="{StaticResource Faint}" Margin="0,0,16,0" Visibility="{Binding IsPreview, Converter={StaticResource VisibleWhen}}" />
+                <Button x:Name="AccountButton" Style="{StaticResource FlatButton}" Command="{Binding LoginCommand}" Content="{Binding AccountText}" FontSize="11" ToolTip="登录或管理 B 站账号" />
+                <Button Style="{StaticResource IconButton}" Click="Hide_Click" ToolTip="收起到托盘" Margin="8,0,10,0">
+                    <ui:LineIcon Kind="Tray" />
+                </Button>
             </StackPanel>
-        </Border>
-        <Border Grid.Row="4" Background="White" Padding="12" CornerRadius="8" Margin="0,0,0,10">
-            <StackPanel x:Name="DesktopPanel">
-                <WrapPanel Margin="0,0,0,8">
-                    <CheckBox x:Name="WallpaperBox" Content="桌面视频" VerticalAlignment="Center" Margin="0,0,14,0"/>
-                    <ComboBox x:Name="DisplayBox" Width="290" DisplayMemberPath="Label" ToolTip="选择一块屏幕；屏幕离线时暂用主屏"/>
-                    <ComboBox x:Name="FitBox" Width="105" Margin="10,0" SelectedIndex="0">
-                        <ComboBoxItem Content="填充（裁切）"/><ComboBoxItem Content="适应（留边）"/>
-                    </ComboBox>
-                    <Button Content="应用桌面设置" Click="ApplyDesktop_Click"/>
-                </WrapPanel>
-                <WrapPanel Margin="0,0,0,6">
-                    <CheckBox x:Name="ContinueAudioBox" Content="隐藏画面时继续音乐" VerticalAlignment="Center" Margin="0,0,18,0"/>
-                    <CheckBox x:Name="StartupBox" Content="登录后在托盘启动并恢复" VerticalAlignment="Center"/>
-                </WrapPanel>
-                <TextBlock x:Name="DesktopStatus" Foreground="#536170" Text="正在连接桌面…"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <Button Style="{StaticResource IconButton}" Width="44" Height="38" Click="Minimize_Click" ToolTip="最小化">
+                    <ui:LineIcon Kind="Minimize" Width="15" Height="15" />
+                </Button>
+                <Button Style="{StaticResource IconButton}" Width="44" Height="38" Click="Maximize_Click" ToolTip="最大化或还原">
+                    <ui:LineIcon Kind="Maximize" Width="13" Height="13" />
+                </Button>
+                <Button Style="{StaticResource IconButton}" Width="44" Height="38" Click="Close_Click" ToolTip="关闭窗口并收起到托盘">
+                    <ui:LineIcon Kind="Close" Width="15" Height="15" />
+                </Button>
             </StackPanel>
+        </Grid>
+        <Grid Grid.Column="1" Grid.Row="1" Margin="44,26,44,8" IsEnabled="{Binding IsImportOpen, Converter={StaticResource EqualsValue}, ConverterParameter=False}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="100" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid>
+                <StackPanel VerticalAlignment="Top">
+                    <TextBlock Text="{Binding PageTitle}" FontSize="27" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding PageSubtitle}" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,9,0,0" />
+                </StackPanel>
+                <Button x:Name="AddSourceButton" Style="{StaticResource PrimaryButton}" Command="{Binding OpenImportCommand}" Width="144" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,7,0,0" Visibility="{Binding CanAddFromHeader, Converter={StaticResource VisibleWhen}}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:LineIcon Kind="Plus" Width="16" Height="16" Margin="0,0,9,0" />
+                        <TextBlock Text="添加来源" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="QueuePlayButton" Style="{StaticResource PrimaryButton}" Command="{Binding PlayQueueCommand}" Width="144" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,7,0,0" Visibility="{Binding IsQueue, Converter={StaticResource VisibleWhen}}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:LineIcon Kind="Play" Width="15" Height="15" Margin="0,0,9,0" />
+                        <TextBlock Text="播放所选" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="ApplySettingsButton" Style="{StaticResource PrimaryButton}" Command="{Binding ApplySettingsCommand}" Width="144" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,7,0,0" Visibility="{Binding IsSettings, Converter={StaticResource VisibleWhen}}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:LineIcon Kind="Check" Width="16" Height="16" Margin="0,0,9,0" />
+                        <TextBlock Text="应用设置" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <Border Grid.Row="1" Background="{StaticResource Surface}" Padding="12,9" Margin="0,0,0,18" Visibility="{Binding ShowNotice, Converter={StaticResource VisibleWhen}}">
+                <TextBlock Text="{Binding Notice}" FontSize="12" TextWrapping="Wrap" />
+            </Border>
+            <Grid Grid.Row="2">
+                <views:WorkspaceView Visibility="{Binding IsWorkspace, Converter={StaticResource VisibleWhen}}" />
+                <views:LibraryView Visibility="{Binding IsLibrary, Converter={StaticResource VisibleWhen}}" />
+                <views:QueueView Visibility="{Binding IsQueue, Converter={StaticResource VisibleWhen}}" />
+                <views:SettingsView Visibility="{Binding IsSettings, Converter={StaticResource VisibleWhen}}" />
+            </Grid>
+        </Grid>
+        <Border Grid.Column="1" Grid.Row="2" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" IsEnabled="{Binding IsImportOpen, Converter={StaticResource EqualsValue}, ConverterParameter=False}">
+            <Grid Margin="44,0,26,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2.6*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="32" />
+                    <ColumnDefinition Width="2.3*" />
+                    <ColumnDefinition Width="30" />
+                    <ColumnDefinition Width="184" />
+                </Grid.ColumnDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="50" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <ui:LandscapeArt Width="48" Height="44" Opacity="0.8" />
+                    <StackPanel Grid.Column="1" Margin="15,0,12,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CurrentTitle}" FontSize="13" ToolTip="{Binding CurrentTitle}" />
+                        <TextBlock Text="{Binding CurrentUploader}" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Grid>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource IconButton}" Command="{Binding PreviousCommand}" ToolTip="上一项">
+                        <ui:LineIcon Kind="Previous" Width="16" Height="16" />
+                    </Button>
+                    <Button x:Name="PlayPauseButton" Command="{Binding PlayPauseCommand}" ToolTip="{Binding PlayButtonLabel}" AutomationProperties.Name="{Binding PlayButtonLabel}" Background="#191919" Foreground="White" BorderThickness="0" Width="36" Height="36" Padding="9" Margin="7,0">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="18">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter Property="Opacity" Value="0.3" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <ui:LineIcon Width="18" Height="18" Kind="{Binding IsPlaying, Converter={StaticResource PlayIcon}}" />
+                    </Button>
+                    <Button Style="{StaticResource IconButton}" Command="{Binding NextCommand}" ToolTip="下一项">
+                        <ui:LineIcon Kind="Next" Width="16" Height="16" />
+                    </Button>
+                    <Button Style="{StaticResource IconButton}" Command="{Binding StopCommand}" ToolTip="停止播放">
+                        <ui:LineIcon Kind="Stop" Width="14" Height="14" />
+                    </Button>
+                    <Button Style="{StaticResource IconButton}" Command="{Binding ReloadCommand}" ToolTip="重新获取视频流">
+                        <ui:LineIcon Kind="Refresh" Width="16" Height="16" />
+                    </Button>
+                </StackPanel>
+                <Grid Grid.Column="3" VerticalAlignment="Center">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="16" />
+                        <RowDefinition Height="24" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{Binding PositionText}" FontSize="10" Foreground="{StaticResource Body}" />
+                    <TextBlock Text="{Binding DurationText}" FontSize="10" Foreground="{StaticResource Faint}" HorizontalAlignment="Right" />
+                    <Slider x:Name="PlaybackSeek" Grid.Row="1" Minimum="0" Maximum="{Binding DurationSeconds}" Value="{Binding SeekPosition, Mode=TwoWay}" IsEnabled="{Binding HasCurrent}" PreviewMouseLeftButtonDown="Seek_Down" PreviewMouseLeftButtonUp="Seek_Up" PreviewKeyUp="Seek_KeyUp" ToolTip="{Binding SeekText}" AutomationProperties.Name="播放进度" />
+                </Grid>
+                <Grid Grid.Column="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="22" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="36" />
+                    </Grid.ColumnDefinitions>
+                    <ui:LineIcon Kind="Volume" Width="18" Height="18" />
+                    <Slider x:Name="VolumeSlider" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay}" Margin="9,0" VerticalAlignment="Center" PreviewMouseLeftButtonUp="Volume_Commit" PreviewKeyUp="Volume_KeyUp" AutomationProperties.Name="音量" />
+                    <TextBlock Grid.Column="2" Text="{Binding VolumeText}" FontSize="10" Foreground="{StaticResource Muted}" />
+                    <Button Grid.Column="3" Style="{StaticResource IconButton}" Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip="桌面、画质与音质设置">
+                        <ui:LineIcon Kind="Monitor" />
+                    </Button>
+                </Grid>
+            </Grid>
         </Border>
-        <TextBlock Grid.Row="5" x:Name="StatusText" Text="正在读取本地资料…" Foreground="#536170" AutomationProperties.LiveSetting="Polite"/>
+        <Grid Grid.ColumnSpan="2" Grid.RowSpan="3" x:Name="ImportOverlay" Background="#1A000000" Visibility="{Binding IsImportOpen, Converter={StaticResource VisibleWhen}}" Panel.ZIndex="20">
+            <views:ImportView HorizontalAlignment="Center" VerticalAlignment="Center" MaxHeight="760" Margin="32" />
+        </Grid>
     </Grid>
 </Window>

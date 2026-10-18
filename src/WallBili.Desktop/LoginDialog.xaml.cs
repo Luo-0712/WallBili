@@ -38,7 +38,7 @@ public partial class LoginDialog : Window
 
     private async void Tabs_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (_closed) return;
+        if (_closed || !IsLoaded) return;
         if (Tabs.SelectedIndex == 0) await RefreshQrAsync();
         else StopPolling();
     }
