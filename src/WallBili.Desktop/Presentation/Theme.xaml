@@ -346,6 +346,29 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <Style x:Key="Check.Switch" TargetType="CheckBox">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <DockPanel Background="Transparent">
+                        <Border x:Name="SwitchSurface" DockPanel.Dock="Right" Width="32" Height="18" Background="#DADADA" CornerRadius="9" VerticalAlignment="Center">
+                            <Ellipse x:Name="SwitchThumb" Width="14" Height="14" Fill="White" HorizontalAlignment="Left" Margin="2,0" />
+                        </Border>
+                        <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True" />
+                    </DockPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="SwitchSurface" Property="Background" Value="#191919" />
+                            <Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Right" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
     <Style TargetType="RadioButton">
         <Setter Property="Template">
             <Setter.Value>

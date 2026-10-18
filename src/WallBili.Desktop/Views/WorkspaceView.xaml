@@ -121,10 +121,10 @@
                     <TextBlock Text="播放选项" Style="{StaticResource SectionTitle}" Margin="0,0,0,28" />
                     <TextBlock Text="播放模式" FontSize="12" Foreground="{StaticResource Muted}" />
                     <ComboBox x:Name="WorkspaceMode" ItemsSource="{Binding ModeOptions}" DisplayMemberPath="Label" SelectedValuePath="Id" SelectedValue="{Binding ModeId, Mode=OneWay}" SelectionChanged="Mode_Changed" Margin="0,9,0,24" AutomationProperties.Name="播放模式" />
-                    <CheckBox Content="隐藏画面时继续音乐" IsChecked="{Binding ContinueAudio}" FontSize="12" />
-                    <TextBlock Text="只听声音，保留当前队列。" FontSize="11" Foreground="{StaticResource Faint}" Margin="24,9,0,24" />
-                    <CheckBox Content="登录后在托盘启动" IsChecked="{Binding AutoStart}" FontSize="12" />
-                    <TextBlock Text="下次启动恢复上次播放进度。" FontSize="11" Foreground="{StaticResource Faint}" Margin="24,9,0,14" />
+                    <CheckBox Style="{StaticResource Check.Switch}" Content="隐藏画面时继续音乐" IsChecked="{Binding ContinueAudio}" FontSize="12" />
+                    <TextBlock Text="只听声音，保留当前队列。" FontSize="11" Foreground="{StaticResource Faint}" Margin="0,9,0,24" />
+                    <CheckBox Style="{StaticResource Check.Switch}" Content="登录后在托盘启动" IsChecked="{Binding AutoStart}" FontSize="12" />
+                    <TextBlock Text="下次启动恢复上次播放进度。" FontSize="11" Foreground="{StaticResource Faint}" Margin="0,9,0,14" />
                     <Button Content="保存播放选项 →" Command="{Binding ApplySettingsCommand}" HorizontalAlignment="Left" Style="{StaticResource FlatButton}" FontSize="11" Margin="-6,0,0,0" />
                 </StackPanel>
             </Grid>
