@@ -9,7 +9,7 @@ public sealed record ContentKey(string Bvid, long Cid)
 public sealed record VideoPart(int Page, ContentKey Key, string Title, TimeSpan Duration);
 
 public sealed record VideoInfo(string Bvid, string Title, string Uploader, long UploaderId,
-    TimeSpan Duration, IReadOnlyList<VideoPart> Parts);
+    TimeSpan Duration, IReadOnlyList<VideoPart> Parts, IReadOnlyList<CollectionSource>? RelatedCollections = null);
 
 public sealed record MediaTrack(Uri Url, string Codec, int Quality, int Width = 0, int Height = 0, int Bandwidth = 0)
 {

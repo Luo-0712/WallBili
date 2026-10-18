@@ -464,7 +464,10 @@ public sealed class DesktopRegressionTests
         host.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var app = XDocument.Load(Path.Combine(repo, "src/WallBili.Desktop/App.xaml"));
         var resources = new XElement(root.Name.Namespace + "ResourceDictionary", app.Root!.Elements().First().Elements());
-        host.Resources = (ResourceDictionary)XamlReader.Parse(resources.ToString());
+        // 隔离宿主是从文本重新解析这份字典的，clr-namespace 必须带程序集限定名才找得到 DesignFont；
+        // App.xaml 自己不能写 assembly=（同一个程序集在标记编译阶段会报 MC3074），所以在此补全。
+        host.Resources = (ResourceDictionary)XamlReader.Parse(resources.ToString().Replace(
+            "clr-namespace:WallBili.Desktop\"", "clr-namespace:WallBili.Desktop;assembly=WallBili.Desktop\""));
         foreach (var element in root.Descendants().Where(e => e.Attribute(x + "Name") is not null))
         {
             var name = element.Attribute(x + "Name")!.Value;
@@ -619,6 +622,9 @@ public sealed class DesktopRegressionTests
             Set(Window, "_preferences", new DesktopPreferences { MpvPath = "mpv", WallpaperEnabled = false });
             Set(Window, "_preferencesPath", PreferencesPath); Set(Window, "_mpvPath", "mpv");
             Set(Window, "_lifetime", new CancellationTokenSource());
+            Set(Window, "_mcpLifecycle", new SemaphoreSlim(1, 1));
+            Set(Window, "_mcpTokens", new McpTokenStore(Path.Combine(_directory, "mcp-token.dat")));
+            Set(Window, "_agentOperations", new HashSet<Task>());
             Set(Window, "_timer", new DispatcherTimer { Interval = TimeSpan.FromHours(1) });
             foreach (var name in new[] { "ImportPanel", "ListsPanel", "PlayerPanel", "DesktopPanel", "SourcesBox", "CatalogGrid",
                 "QueueGrid", "QueueTitle", "CurrentText", "PositionText", "Progress", "ModeBox", "StatusText", "DesktopStatus",
@@ -636,7 +642,9 @@ public sealed class DesktopRegressionTests
         {
             ((DispatcherTimer)Get(Window, "_timer")!).Stop();
             var lifetime = (CancellationTokenSource)Get(Window, "_lifetime")!;
-            lifetime.Cancel(); lifetime.Dispose();
+            lifetime.Cancel();
+            ((Task)Call(Window, "StopAgentAsync")!).GetAwaiter().GetResult();
+            lifetime.Dispose();
             ((RoamingService)Get(Window, "_roaming")!).DisposeAsync().AsTask().GetAwaiter().GetResult();
             Library.DisposeAsync().AsTask().GetAwaiter().GetResult();
             _host.Dispose(); _icon.Dispose(); _http.Dispose();

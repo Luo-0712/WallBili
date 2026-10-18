@@ -1,7 +1,7 @@
 namespace WallBili.Core;
 
 /// <summary>Serializes queue edits, EOF callbacks and checkpoints. A failed traversal visits each item at most once.</summary>
-public sealed class LibrarySession : IAsyncDisposable
+public sealed partial class LibrarySession : IAsyncDisposable
 {
     private readonly IContentClient _content;
     private readonly ILibraryStore _store;
@@ -21,6 +21,7 @@ public sealed class LibrarySession : IAsyncDisposable
     private LibrarySnapshot _snapshot = new([], [], [], new(), "就绪");
     private MediaSelectionPreferences _selection = MediaSelectionPreferences.Automatic;
     private MediaSelectionSummary? _media;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _sourceRemovalRevisions = new();
 
     public LibrarySession(IContentClient content, ILibraryStore store, IQueuePlayer player,
         TimeProvider? time = null, MediaSelectionPreferences? selection = null)
@@ -39,18 +40,27 @@ public sealed class LibrarySession : IAsyncDisposable
     {
         if (_initialized) throw new InvalidOperationException("The library is already initialized.");
         _state = await _store.LoadAsync(ct);
+        for (var i = 0; i < _state.Agent.Tasks.Count; i++)
+            if (_state.Agent.Tasks[i].State is "pending" or "running")
+                _state.Agent.Tasks[i] = _state.Agent.Tasks[i] with { State = "interrupted", Failure = "Interrupted" };
         _initialized = true;
         if (_state.Playback.CurrentId is { } id && !_state.Queue.Any(q => q.Id == id))
             _state.Playback = _state.Playback with { CurrentId = null, Intent = PlaybackIntent.Stopped, PositionSeconds = 0 };
         _notice = "已恢复本地目录与队列";
-        if (_state.Playback.CurrentId is not null && _state.Playback.Intent != PlaybackIntent.Stopped)
+        if (_state.ActiveSource == PlaybackSource.Manual && _state.Playback.CurrentId is not null && _state.Playback.Intent != PlaybackIntent.Stopped)
             await StartAsync(CurrentIndex(), _state.Playback.PositionSeconds, _state.Playback.Intent == PlaybackIntent.Paused, ct);
     }, token, initializing: true);
 
-    public async Task ImportVideoAsync(string input, CancellationToken token = default) =>
-        await ApplyImportAsync(await new CatalogImporter(_content).VideoAsync(input, token), token);
-    public async Task ImportCollectionAsync(CollectionSource source, CancellationToken token = default) =>
-        await ApplyImportAsync(await new CatalogImporter(_content).CollectionAsync(source, token), token);
+    public async Task ImportVideoAsync(string input, CancellationToken token = default)
+    {
+        var removals = _sourceRemovalRevisions.ToArray().ToDictionary(p => p.Key, p => p.Value);
+        await ApplyImportAsync(await new CatalogImporter(_content).VideoAsync(input, token), removals, token);
+    }
+    public async Task ImportCollectionAsync(CollectionSource source, CancellationToken token = default)
+    {
+        var removals = _sourceRemovalRevisions.ToArray().ToDictionary(p => p.Key, p => p.Value);
+        await ApplyImportAsync(await new CatalogImporter(_content).CollectionAsync(source, token), removals, token);
+    }
 
     public async Task RefreshSourceAsync(string id, CancellationToken token = default)
     {
@@ -59,8 +69,11 @@ public sealed class LibrarySession : IAsyncDisposable
         else await ImportVideoAsync(source.VideoInput!, token);
     }
 
-    private Task ApplyImportAsync(CatalogImport import, CancellationToken token) => ExecuteAsync(ct =>
+    private Task ApplyImportAsync(CatalogImport import, IReadOnlyDictionary<string, long> removals, CancellationToken token) => ExecuteAsync(ct =>
     {
+        if (_sourceRemovalRevisions.GetValueOrDefault(import.Source.Id) != removals.GetValueOrDefault(import.Source.Id))
+            throw new AgentControlException("Conflict", "The source was removed while import was in progress.");
+        _state.Agent.RemovedSources.Remove(import.Source.Id);
         foreach (var entry in import.Entries)
         {
             var index = _state.Entries.FindIndex(e => e.Key == entry.Key);
@@ -88,7 +101,9 @@ public sealed class LibrarySession : IAsyncDisposable
 
     public Task RemoveSourceAsync(string id, CancellationToken token = default) => ExecuteAsync(ct =>
     {
+        _sourceRemovalRevisions.AddOrUpdate(id, 1, (_, revision) => revision + 1);
         _state.Sources.RemoveAll(s => s.Id == id);
+        if (!_state.Agent.RemovedSources.Contains(id, StringComparer.Ordinal)) _state.Agent.RemovedSources.Add(id);
         _notice = "已移除来源，目录与队列保留";
         return Task.CompletedTask;
     }, token);
@@ -99,15 +114,15 @@ public sealed class LibrarySession : IAsyncDisposable
         if (selected.Any(key => !_state.Entries.Any(e => e.Key == key))) throw new ArgumentException("Content is not in the catalog.");
         foreach (var key in selected)
         {
-            _state.Queue.Add(new(Guid.NewGuid(), key));
+            ManualItems.Add(new(Guid.NewGuid(), key));
         }
         _notice = "已加入队列";
         return Task.CompletedTask;
     }, token);
 
-    public Task MoveQueueAsync(Guid id, int offset, CancellationToken token = default) => ExecuteAsync(ct =>
+    public Task MoveQueueAsync(Guid id, int offset, CancellationToken token = default) => UserActionAsync(ct =>
     {
-        Move(_state.Queue, _state.Queue.FindIndex(q => q.Id == id), offset);
+        Move(ManualItems, ManualItems.FindIndex(q => q.Id == id), offset);
         return Task.CompletedTask;
     }, token);
 
@@ -117,8 +132,13 @@ public sealed class LibrarySession : IAsyncDisposable
         return Task.CompletedTask;
     }, token);
 
-    public Task RemoveQueueAsync(Guid id, CancellationToken token = default) => ExecuteAsync(async ct =>
+    public Task RemoveQueueAsync(Guid id, CancellationToken token = default) => UserActionAsync(async ct =>
     {
+        if (_state.ActiveSource == PlaybackSource.Roaming)
+        {
+            _state.ManualPlayback = RemoveInactiveItems(_state.ManualQueue, _state.ManualPlayback, q => q.Id == id);
+            return;
+        }
         var index = _state.Queue.FindIndex(q => q.Id == id);
         if (index < 0) return;
         var current = _state.Playback.CurrentId == id;
@@ -128,14 +148,18 @@ public sealed class LibrarySession : IAsyncDisposable
         _notice = "已从队列移除";
     }, token);
 
-    public Task RemoveEntryAsync(ContentKey key, CancellationToken token = default) => ExecuteAsync(async ct =>
+    public Task RemoveEntryAsync(ContentKey key, CancellationToken token = default) => UserActionAsync(async ct =>
     {
+        PruneAgentContent(key);
         var current = CurrentIndex();
         var removesCurrent = current >= 0 && _state.Queue[current].Key == key;
         var successor = current < 0 ? 0 : _state.Queue.Take(current).Count(q => q.Key != key);
         var intent = _state.Playback.Intent;
         _state.Queue.RemoveAll(q => q.Key == key);
         _state.Entries.RemoveAll(e => e.Key == key);
+        _state.ManualPlayback = RemoveInactiveItems(_state.ManualQueue, _state.ManualPlayback, q => q.Key == key);
+        foreach (var account in _state.RoamingAccounts.Values)
+            account.Playback = RemoveInactiveItems(account.Queue, account.Playback, q => q.Key == key);
         for (var i = 0; i < _state.Sources.Count; i++)
             _state.Sources[i] = _state.Sources[i] with { Members = _state.Sources[i].Members.Where(k => k != key).ToArray() };
         if (removesCurrent) await AfterCurrentRemovedAsync(successor, intent, ct);
@@ -155,8 +179,21 @@ public sealed class LibrarySession : IAsyncDisposable
         }
     }
 
-    public Task PlayAsync(Guid? id = null, CancellationToken token = default) => ExecuteAsync(async ct =>
+    public Task PlayAsync(Guid? id = null, CancellationToken token = default) => UserActionAsync(async ct =>
     {
+        if (id is not null) DetachPreparedQueues();
+        if (id is null && _preparedQueue is { } waiting && (waiting.Waiting || !waiting.Started && _activePlayback is null &&
+            (_state.Playback.CurrentId is null || waiting.Autoplay)))
+        {
+            waiting.Autoplay = true; waiting.Paused = false;
+            _state.Playback = _state.Playback with { Intent = PlaybackIntent.Playing };
+            await FeedPreparedQueueAsync(ct);
+            return;
+        }
+        if (id is null) foreach (var preparation in _preparedQueues) preparation.Paused = false;
+        if (id is not null) await SwitchToManualAsync(ct);
+        if (_state.ActiveSource == PlaybackSource.Roaming && (CurrentIndex() < 0 || _state.Playback.Intent == PlaybackIntent.Stopped))
+        { await BeginRoamingAsync(false, ct); return; }
         _recoveryPending = false; _retryAttempt = 0; _streamFailures = 0;
         var index = id is { } selected ? _state.Queue.FindIndex(q => q.Id == selected) : CurrentIndex();
         if (index < 0) index = 0;
@@ -169,27 +206,38 @@ public sealed class LibrarySession : IAsyncDisposable
         else await StartAsync(index, id is null ? _state.Playback.PositionSeconds : 0, false, ct);
     }, token);
 
-    public Task PauseAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
+    public Task PauseAsync(CancellationToken token = default) => UserActionAsync(async ct =>
     {
-        if (_state.Playback.Intent == PlaybackIntent.Stopped) return;
+        foreach (var preparing in _preparedQueues) preparing.Paused = true;
+        if (_state.Playback.Intent == PlaybackIntent.Stopped && _preparedQueue is not { Started: false, Autoplay: true }) return;
         if (_activePlayback is not null) await _player.SetPausedAsync(true, ct);
         await CapturePositionAsync(ct);
         _state.Playback = _state.Playback with { Intent = PlaybackIntent.Paused };
         _notice = "已暂停";
     }, token);
 
-    public Task StopAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
+    public Task StopAsync(CancellationToken token = default) => UserActionAsync(async ct =>
     {
+        foreach (var preparing in _preparedQueues) { preparing.Autoplay = false; preparing.Waiting = false; }
         _recoveryPending = false; _retryAttempt = 0; _streamFailures = 0;
         await StopPlayerAsync(ct);
         _state.Playback = _state.Playback with { Intent = PlaybackIntent.Stopped, PositionSeconds = 0 };
         _notice = "已停止；下次启动不会自动播放";
+        if (ActiveRoaming is { } roaming) roaming.RoundActive = false;
     }, token);
 
     public Task NextAsync(CancellationToken token = default) => NavigateAsync(1, token);
     public Task PreviousAsync(CancellationToken token = default) => NavigateAsync(-1, token);
-    private Task NavigateAsync(int direction, CancellationToken token) => ExecuteAsync(async ct =>
+    private Task NavigateAsync(int direction, CancellationToken token) => UserActionAsync(async ct =>
     {
+        DetachPreparedQueues();
+        if (_state.ActiveSource == PlaybackSource.Roaming)
+        {
+            if (ActiveRoaming is { } roaming && _snapshot.Current is { } current)
+                roaming.ExcludedBvids.Add(current.Key.Bvid);
+            await StartNextRoamingVideoAsync(ct);
+            return;
+        }
         _recoveryPending = false; _retryAttempt = 0; _streamFailures = 0;
         var index = CurrentIndex();
         var target = index < 0 ? 0 : index + direction;
@@ -201,7 +249,8 @@ public sealed class LibrarySession : IAsyncDisposable
 
     public Task SetModeAsync(QueueMode mode, CancellationToken token = default) => ExecuteAsync(ct =>
     {
-        _state.Playback = _state.Playback with { Mode = mode };
+        if (_state.ActiveSource == PlaybackSource.Manual) _state.Playback = _state.Playback with { Mode = mode };
+        else _state.ManualPlayback = _state.ManualPlayback with { Mode = mode };
         return Task.CompletedTask;
     }, token);
 
@@ -236,8 +285,9 @@ public sealed class LibrarySession : IAsyncDisposable
     /// A failed load attempts the previous selection once; if that also fails the item is paused in place.</summary>
     private async Task SwitchCurrentMediaAsync(QueueItem item, MediaSelectionPreferences previous, CancellationToken ct)
     {
-        _recoveryPending = false; _retryAttempt = 0;
         var media = await _content.ResolveMediaAsync(item.Key, _selection, ct);
+        // Keep an existing retry scheduled until resolving the replacement succeeds.
+        _recoveryPending = false; _retryAttempt = 0;
         await CapturePositionAsync(ct);
         var paused = _state.Playback.Intent == PlaybackIntent.Paused;
         var entry = _state.Entries.First(e => e.Key == item.Key);
@@ -317,6 +367,10 @@ public sealed class LibrarySession : IAsyncDisposable
     /// <summary>Retries only the current stable identity, with capped backoff. A user stop cancels recovery.</summary>
     public Task RetryRecoveryAsync(bool immediate = false, CancellationToken token = default) => ExecuteAsync(async ct =>
     {
+        if (_recoveryPending && _state.ActiveSource == PlaybackSource.Roaming && _pendingMetadataBvid is not null &&
+            _state.Playback.Intent == PlaybackIntent.Playing &&
+            !_suspended && (immediate || _time.GetUtcNow() >= _retryAt))
+        { await StartNextRoamingVideoAsync(ct); return; }
         if (!_recoveryPending || _suspended || CurrentIndex() < 0 || _state.Playback.Intent == PlaybackIntent.Stopped ||
             (!immediate && _time.GetUtcNow() < _retryAt)) return;
         _recoveryPending = false;
@@ -324,7 +378,7 @@ public sealed class LibrarySession : IAsyncDisposable
     }, token);
 
     /// <summary>System sleep preserves playback intent without leaving an audible process running.</summary>
-    public Task SuspendAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
+    public Task SuspendAsync(CancellationToken token = default) => UserActionAsync(async ct =>
     {
         _suspended = true;
         await CapturePositionAsync(ct);
@@ -379,6 +433,7 @@ public sealed class LibrarySession : IAsyncDisposable
             {
                 _state.Playback = _state.Playback with { CurrentId = item.Id, PositionSeconds = seconds,
                     Intent = paused ? PlaybackIntent.Paused : PlaybackIntent.Playing };
+                ActivatePreparedQueue(item.Id, paused);
                 var playbackId = Guid.NewGuid();
                 try
                 {
@@ -415,6 +470,7 @@ public sealed class LibrarySession : IAsyncDisposable
                     }
                     SetAvailability(item.Key, EntryAvailability.Failed, ex.Kind.ToString());
                     await StopPlayerAsync(ct);
+                    if (await TryScheduledBoundaryAsync(item.Id, index + 1, ct)) return;
                 }
                 catch (PlaybackInterruptedException)
                 {
@@ -434,6 +490,8 @@ public sealed class LibrarySession : IAsyncDisposable
                     throw;
                 }
             }
+            if (await TryScheduledBoundaryAsync(item.Id, index + 1, ct)) return;
+            if (await WaitForPreparedContentAsync(index + 1, ct)) return;
             first = false; seconds = 0; index++;
             if (index == _state.Queue.Count && _state.Playback.Mode == QueueMode.RepeatAll) index = 0;
         }
@@ -472,16 +530,30 @@ public sealed class LibrarySession : IAsyncDisposable
                     return;
                 }
                 var next = index + 1;
+                if (await TryScheduledBoundaryAsync(item.Id, next, ct)) return;
+                if (_state.ActiveSource == PlaybackSource.Roaming && next >= _state.Queue.Count)
+                {
+                    CompleteRoamingVideo(item.Key.Bvid);
+                    await StartNextRoamingVideoAsync(ct);
+                    return;
+                }
+                if (await WaitForPreparedContentAsync(next, ct)) return;
                 if (next == _state.Queue.Count && _state.Playback.Mode == QueueMode.RepeatAll) next = 0;
                 // Automatic advancement does not retry a previously failed first candidate.
                 var visited = 0;
                 while (next < _state.Queue.Count && _state.Entries.First(e => e.Key == _state.Queue[next].Key).Availability == EntryAvailability.Failed)
                 {
+                    if (await TryScheduledBoundaryAsync(_state.Queue[next].Id, next + 1, ct)) return;
                     if (++visited >= _state.Queue.Count) { next = _state.Queue.Count; break; }
                     next++;
                     if (next == _state.Queue.Count && _state.Playback.Mode == QueueMode.RepeatAll) next = 0;
                 }
                 await StartAsync(next, 0, false, ct);
+                if (_state.ActiveSource == PlaybackSource.Roaming && _state.Playback.Intent == PlaybackIntent.Stopped)
+                {
+                    CompleteRoamingVideo(item.Key.Bvid);
+                    await StartNextRoamingVideoAsync(ct);
+                }
             }, _lifetime.Token);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
@@ -516,20 +588,24 @@ public sealed class LibrarySession : IAsyncDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (!_initialized && !initializing) throw new InvalidOperationException("Initialize the library before use.");
             await action(token);
+            SaveActiveContext();
             await _store.SaveAsync(_state, token);
         }
         catch
         {
             _notice = "操作失败；请检查网络、来源或播放器配置后重试";
             if (_initialized)
-                try { await _store.SaveAsync(_state, CancellationToken.None); } catch { }
+                try { SaveActiveContext(); await _store.SaveAsync(_state, CancellationToken.None); } catch { }
             throw;
         }
         finally
         {
             Volatile.Write(ref _snapshot, new(_state.Entries.ToArray(), _state.Sources.ToArray(),
                 _state.Queue.ToArray(), _state.Playback, _notice, _recoveryPending, _recoveryPending ? _retryAt : null,
-                _activePlayback is not null && !_recoveryPending, _media));
+                _activePlayback is not null && !_recoveryPending, _media, _state.ActiveSource, CreateRoamingSnapshot(),
+                ManualItems.ToArray(), _state.ActiveSource == PlaybackSource.Manual ? _state.Playback : _state.ManualPlayback,
+                new(_state.Agent.Playlists.ToArray(), _state.Agent.Tasks.ToArray(), _state.Agent.QueueRevision,
+                    _preparedQueue is { Waiting: true })));
             _gate.Release();
             Changed?.Invoke(this, EventArgs.Empty);
         }
@@ -549,6 +625,7 @@ public sealed class LibrarySession : IAsyncDisposable
                 if (_initialized)
                 {
                     await CapturePositionAsync(CancellationToken.None);
+                    SaveActiveContext();
                     await _store.SaveAsync(_state, CancellationToken.None);
                 }
             }

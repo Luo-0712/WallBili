@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using WallBili.Core;
 using WallBili.Infrastructure.Bilibili;
@@ -22,12 +25,17 @@ internal static class Probe
                 video INPUT                         Metadata and all BVID/CID parts
                 media INPUT [--page N]              Resolve twice; safe format summary
                 collection season|series UP_ID ID [--page N] [--size N]
+                discover followings [--page N] [--size N] [--auth-file PATH]
+                discover creator UP_ID [--page N] [--size N] [--auth-file PATH]
+                discover check UP_ID [--size N] [--auth-file PATH]
                 check-playback INPUT [--page N] [--mpv PATH] [--headless]
                 check-queue INPUT1 INPUT2 [--mpv PATH] [--headless]
                 INPUT: a BVID or https://www.bilibili.com/video/BVID/?p=N
                 check-playback verifies decoded A/V, clock, pause, resume and seek.
                 check-queue imports two video sources and seeks near each end to verify actual EOF advancement.
                 --headless uses null outputs; visible/audible output still needs Windows.
+                discover reads an existing Windows DPAPI auth.dat only; it never changes credentials or the library.
+                discover check verifies following and publication-ordered creator pages without media playback.
                 No session cookies, signed stream URLs or raw HTTP errors are printed.
                 """);
             return 0;
@@ -78,6 +86,8 @@ internal static class Probe
                     Write(new { capability = "collection_page", status = "passed", page });
                     return 0;
                 }
+                case "discover":
+                    return await CheckDiscoveryAsync(bili, args, timeout.Token);
                 case "check-playback":
                 {
                     var (_, part) = await SelectPartAsync(bili, args, timeout.Token);
@@ -178,7 +188,7 @@ internal static class Probe
         }
         catch (ContentAccessException error)
         {
-            Write(new { status = "failed", kind = error.Kind.ToString(), message = error.Message });
+            Write(new { status = "failed", kind = error.Kind.ToString(), service_code = error.ServiceCode, message = error.Message });
             return 2;
         }
         catch (MpvException error)
@@ -201,6 +211,56 @@ internal static class Probe
             Write(new { status = "failed", kind = "verification_or_transport_error", error_type = error.GetType().Name });
             return 3;
         }
+    }
+
+    private static async Task<int> CheckDiscoveryAsync(BilibiliClient bili, string[] args, CancellationToken ct)
+    {
+        var path = Option(args, "--auth-file") ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WallBili", "auth.dat");
+        var cookies = StoredCredentialReader.Read(path);
+        if (cookies is null)
+        {
+            Write(new { capability = "account_discovery", status = "blocked", kind = "authentication_required",
+                message = "No readable existing Windows login store. Sign in through WallBili and rerun the read-only probe.",
+                credentials_changed = false, library_changed = false, playback_started = false });
+            return 2;
+        }
+        await bili.ImportCookiesAsync(cookies, ct);
+        var page = OptionInt(args, "--page", 1);
+        var size = OptionInt(args, "--size", args[1] == "check" ? 2 : 30);
+        if (args[1] == "followings")
+        {
+            var result = await bili.GetFollowingsAsync(page, size, ct);
+            Write(new { capability = "following_page", status = "passed", result });
+            return 0;
+        }
+        var uploaderId = PositiveLong(Required(args, 2));
+        if (args[1] == "creator")
+        {
+            var result = await bili.GetCreatorVideosAsync(uploaderId, page, size, ct);
+            Write(new { capability = "creator_video_page", status = "passed", requested_order = "pubdate", result });
+            return 0;
+        }
+
+        var follows = await bili.GetFollowingsAsync(1, size, ct);
+        var nextFollows = follows.HasMore ? await bili.GetFollowingsAsync(2, size, ct) : null;
+        var videos = await bili.GetCreatorVideosAsync(uploaderId, 1, size, ct);
+        var nextVideos = videos.HasMore ? await bili.GetCreatorVideosAsync(uploaderId, 2, size, ct) : null;
+        var combined = videos.Items.Concat(nextVideos?.Items ?? []).ToArray();
+        var descending = combined.Zip(combined.Skip(1), (left, right) => left.PublishedAt >= right.PublishedAt).All(value => value);
+        var uniqueVideos = combined.Select(video => video.Bvid).Distinct(StringComparer.Ordinal).Count() == combined.Length;
+        var uniqueFollows = follows.Items.Concat(nextFollows?.Items ?? []).Select(creator => creator.Uid).Distinct().Count()
+            == follows.Items.Count + (nextFollows?.Items.Count ?? 0);
+        var passed = descending && uniqueVideos && uniqueFollows;
+        Write(new { capability = "account_discovery_pages", status = passed ? "passed" : "failed", uploader_id = uploaderId,
+            requested_order = "pubdate", requested_page_size = size,
+            following_total = follows.Total, following_page1_count = follows.Items.Count,
+            following_page2_count = nextFollows?.Items.Count, following_pagination_verified = nextFollows is not null,
+            video_total = videos.Total, video_page1_count = videos.Items.Count,
+            video_page2_count = nextVideos?.Items.Count, video_pagination_verified = nextVideos is not null,
+            publication_order_verified = combined.Length > 1 && descending, video_identities_unique = uniqueVideos,
+            following_identities_unique = uniqueFollows, credentials_changed = false, library_changed = false, playback_started = false });
+        return passed ? 0 : 3;
     }
 
     private static async Task<(VideoInfo Video, VideoPart Part)> SelectPartAsync(BilibiliClient bili, string[] args, CancellationToken ct)
@@ -282,11 +342,18 @@ internal static class Probe
             "video" => Array.Empty<string>(),
             "media" => new[] { "--page" },
             "collection" => new[] { "--page", "--size" },
+            "discover" => new[] { "--page", "--size", "--auth-file" },
             "check-playback" => new[] { "--page", "--mpv", "--headless" },
             "check-queue" => new[] { "--mpv", "--headless" },
             _ => throw new ArgumentException("Unknown command.")
         };
-        int positionalCount = args[0] switch { "collection" => 4, "check-queue" => 3, _ => 2 };
+        int positionalCount = args[0] switch
+        {
+            "collection" => 4, "check-queue" => 3,
+            "discover" => Required(args, 1) switch
+            { "followings" => 2, "creator" or "check" => 3, _ => throw new ArgumentException("Unknown discovery command.") },
+            _ => 2
+        };
         if (args.Length < positionalCount) throw new ArgumentException("Missing arguments.");
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (int i = positionalCount; i < args.Length; i++)
@@ -298,6 +365,13 @@ internal static class Probe
         // Reject malformed numeric options before contacting the service.
         _ = OptionInt(args, "--page", 1);
         _ = OptionInt(args, "--size", 30);
+        if (args[0] == "discover")
+        {
+            if (OptionInt(args, "--size", 30) > 50) throw new ArgumentException("Discovery page size exceeds 50.");
+            if (args[1] != "followings") _ = PositiveLong(Required(args, 2));
+            if (args[1] == "check" && Option(args, "--page") is not null)
+                throw new ArgumentException("Discovery check starts at page one.");
+        }
     }
 
     private static string Required(string[] args, int index) =>
@@ -321,4 +395,54 @@ internal static class Probe
             ? number : throw new ArgumentException("Expected a positive integer.");
 
     private static void Write(object value) => Console.WriteLine(JsonSerializer.Serialize(value, JsonOptions));
+}
+
+/// <summary>Read-only DPAPI adapter, matching Desktop.AuthStore without a WPF dependency or plaintext export.</summary>
+internal static class StoredCredentialReader
+{
+    public static string? Read(string path)
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        byte[]? plain = null;
+        DataBlob output = default;
+        IntPtr inputMemory = IntPtr.Zero;
+        try
+        {
+            if (!File.Exists(path) || new FileInfo(path).Length is <= 0 or > 1_048_576) return null;
+            var encrypted = File.ReadAllBytes(path);
+            inputMemory = Marshal.AllocHGlobal(encrypted.Length);
+            Marshal.Copy(encrypted, 0, inputMemory, encrypted.Length);
+            var input = new DataBlob { Size = encrypted.Length, Data = inputMemory };
+            if (!CryptUnprotectData(ref input, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 1, out output) ||
+                output.Size <= 0 || output.Size > 1_048_576) return null;
+            plain = new byte[output.Size];
+            Marshal.Copy(output.Data, plain, 0, plain.Length);
+            return Encoding.UTF8.GetString(plain);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or CryptographicException)
+        {
+            return null;
+        }
+        finally
+        {
+            if (plain is not null) CryptographicOperations.ZeroMemory(plain);
+            if (output.Data != IntPtr.Zero)
+            {
+                if (output.Size is > 0 and <= 1_048_576) Marshal.Copy(new byte[output.Size], 0, output.Data, output.Size);
+                _ = LocalFree(output.Data);
+            }
+            if (inputMemory != IntPtr.Zero) Marshal.FreeHGlobal(inputMemory);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DataBlob { public int Size; public IntPtr Data; }
+
+    [DllImport("Crypt32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CryptUnprotectData(ref DataBlob input, IntPtr description, IntPtr entropy,
+        IntPtr reserved, IntPtr prompt, int flags, out DataBlob output);
+
+    [DllImport("Kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr memory);
 }

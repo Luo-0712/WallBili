@@ -1,6 +1,7 @@
 <Application x:Class="WallBili.Desktop.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:WallBili.Desktop"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <!-- ==================================================================
@@ -10,7 +11,9 @@
              独立窗口里渲染，因此不能使用 MergedDictionaries。
              ================================================================== -->
 
-        <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, sans-serif</FontFamily>
+        <!-- 设计稿的字体栈：拉丁=随应用分发的 Inter，中文=思源黑体 / Noto Sans SC / 雅黑。
+             WPF 的字族列表按字回退，一个 FontFamily 就能让中英文各走各的字体；构造细节见 DesignFont。 -->
+        <local:DesignFont x:Key="UiFont" />
 
         <!-- 文字：主要 / 正文 / 辅助 / 次要 -->
         <SolidColorBrush x:Key="Ink900" Color="#FF191919" />
@@ -43,12 +46,16 @@
 
         <!-- ============================ 文字样式 ============================ -->
 
+        <!-- 20px 以上的文字走 Ideal 排版模式：Display 会把字形吸附到像素网格、把字宽取整，
+             小字号清晰但变形，和设计稿（按线性度量渲染）对不上；小字号仍留在 Display。 -->
+
         <Style x:Key="Text.PageTitle" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontSize" Value="27" />
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
             <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
         </Style>
         <Style x:Key="Text.PageSubtitle" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
@@ -69,18 +76,21 @@
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
             <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
         </Style>
         <Style x:Key="Text.HeroTime" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontSize" Value="31" />
             <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
             <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
         </Style>
         <Style x:Key="Text.StateTitle" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontSize" Value="22" />
             <Setter Property="Foreground" Value="{DynamicResource Ink900}" />
             <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
         </Style>
         <Style x:Key="Text.Body" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />

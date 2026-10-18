@@ -60,6 +60,7 @@ public partial class MainWindow : Window
         _client = new BilibiliClient(_http);
         _client.AccountChanged += AccountChanged;
         _authStore = new(Path.Combine(directory, "auth.dat"));
+        _mcpTokens = new(Path.Combine(directory, "mcp-token.dat"));
         _library = new(_client, new SqliteLibraryStore(Path.Combine(directory, "library.db")), _player,
             selection: ToSelection(_preferences));
         _library.Changed += (_, _) => _ = Dispatcher.InvokeAsync(Render);
@@ -110,6 +111,8 @@ public partial class MainWindow : Window
             _ready = true; SetVolumeSlider(_library.Snapshot.Playback.Volume);
         }, initializing: true);
         if (_ready) SetVolumeSlider(_library.Snapshot.Playback.Volume);
+        if (_ready && !_closing) await InitializeAgentAsync();
+        if (_closing) return;
         _timer.Start();
         QueueRoamingTick();
     }
@@ -736,6 +739,7 @@ public partial class MainWindow : Window
             StatusText.Text = snapshot.Notice;
             RenderQuality(snapshot);
             RenderRoaming();
+            RenderAgent(snapshot);
             _tray.SetStatus(snapshot.Current?.Title ?? intent);
             RefreshDesktop();
         }
@@ -889,6 +893,7 @@ public partial class MainWindow : Window
         IsEnabled = false;
         try
         {
+            try { await StopAgentAsync(); } catch { /* The library still needs its final checkpoint. */ }
             try { await _pending; } catch { }
             await _roaming.DisposeAsync();
             try { await Task.WhenAll(_roamingOperations.ToArray()); } catch { }

@@ -47,8 +47,10 @@ internal sealed class TestContent : IContentClient
     public Uri MediaUri { get; set; } = new("https://example.invalid/media?temporary-secret");
     public Dictionary<ContentKey, Uri> MediaUris { get; } = [];
     public bool RepeatedPage { get; set; }
+    public Func<string, CancellationToken, Task<VideoInfo>>? CustomGetVideo { get; set; }
     public Task<VideoInfo> GetVideoAsync(string input, CancellationToken cancellationToken = default)
     {
+        if (CustomGetVideo is { } custom) return custom(input, cancellationToken);
         if (MetadataFailures.TryGetValue(input, out var failure)) throw new ContentAccessException(failure, "Test metadata failure");
         return Task.FromResult(Videos[input]);
     }

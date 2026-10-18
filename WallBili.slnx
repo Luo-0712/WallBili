@@ -4,15 +4,18 @@
     <Project Path="src/WallBili.Desktop/WallBili.Desktop.csproj" />
     <Project Path="src/WallBili.Infrastructure/WallBili.Infrastructure.csproj" />
     <Project Path="src/WallBili.Player.Mpv/WallBili.Player.Mpv.csproj" />
+    <Project Path="src/WallBili.Mcp/WallBili.Mcp.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/WallBili.Desktop.Tests/WallBili.Desktop.Tests.csproj" />
     <Project Path="tests/WallBili.Library.Tests/WallBili.Library.Tests.csproj" />
     <Project Path="tests/WallBili.Infrastructure.Tests/WallBili.Infrastructure.Tests.csproj" />
     <Project Path="tests/WallBili.Player.Mpv.Tests/WallBili.Player.Mpv.Tests.csproj" />
+    <Project Path="tests/WallBili.Mcp.Tests/WallBili.Mcp.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/WallBili.DesktopProbe/WallBili.DesktopProbe.csproj" />
     <Project Path="tools/WallBili.Probe/WallBili.Probe.csproj" />
+    <Project Path="tools/WallBili.McpBridge/WallBili.McpBridge.csproj" />
   </Folder>
 </Solution>

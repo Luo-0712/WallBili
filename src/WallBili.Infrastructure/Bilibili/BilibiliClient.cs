@@ -8,7 +8,7 @@ namespace WallBili.Infrastructure.Bilibili;
 /// <summary>Web WBI adapter with unified account/visitor session management. Credentials stay in this
 /// instance and are only sent to the Bilibili API endpoints that require them; CDN playback keeps using
 /// media addresses plus the published Referer and User-Agent.</summary>
-public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
+public sealed partial class BilibiliClient(HttpClient httpClient) : IContentClient
 {
     private const string Api = "https://api.bilibili.com";
     private const string Passport = "https://passport.bilibili.com";
@@ -23,6 +23,7 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
     private string? _accountCookies;
     private BilibiliAccount? _account;
     private int _sessionVersion;
+    private long _loginAttemptVersion;
     private string? _activeQrcodeKey;
     private sealed record WbiMaterial(string ImageUrl, string SubUrl, DateTimeOffset RefreshAt);
 
@@ -58,7 +59,7 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
         if (!parts.Any(p => p.Page == parsed.Page))
             throw new ContentAccessException(ContentFailureKind.InvalidInput, "The selected video part does not exist.");
         return new(parsed.Bvid, title, Text(owner, "name"), Number(owner, "mid"), Seconds(video, "duration"),
-            parts.OrderBy(p => p.Page).ToArray());
+            parts.OrderBy(p => p.Page).ToArray(), ReadRelatedCollections(video));
     }
 
     public Task<MediaSession> ResolveMediaAsync(ContentKey key, CancellationToken cancellationToken = default) =>
@@ -129,7 +130,8 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
             throw new ContentAccessException(ContentFailureKind.Unsupported, "No DASH video stream was available.");
         var normalAudio = ReadTracks(Property(dash, "audio")).ToList();
         var dolbyAudio = ReadTracks(Property(Property(dash, "dolby"), "audio")).ToList();
-        var flacAudio = ReadTracks(Property(Property(dash, "flac"), "audio")).ToList();
+        // Unlike normal/Dolby audio, flac.audio is one track object, not an array.
+        var flacAudio = new[] { ReadTrack(Property(Property(dash, "flac"), "audio")) }.OfType<MediaTrack>().ToList();
         var labels = ReadQualityLabels(result);
 
         // Video options are ordered by tier rank (the upstream quality code is monotonic with quality).
@@ -323,6 +325,9 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
     /// <summary>Requests a fresh web QR challenge. Any previous challenge becomes superseded.</summary>
     public async Task<QrLoginChallenge> CreateQrLoginAsync(CancellationToken cancellationToken = default)
     {
+        // Invalidate the previous attempt before requesting a replacement, not after the network returns.
+        long attempt;
+        lock (_accountGate) { attempt = ++_loginAttemptVersion; _activeQrcodeKey = null; }
         var root = await GetJsonAsync(Passport + "/x/passport-login/web/qrcode/generate", cancellationToken);
         var data = Data(root);
         var url = Text(data, "url");
@@ -330,8 +335,16 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
         if (!Uri.TryCreate(url, UriKind.Absolute, out var login) || login.Scheme != "https" ||
             key.Length is < 16 or > 128)
             throw InvalidResponse("The QR login challenge was missing or invalid.");
-        lock (_accountGate) _activeQrcodeKey = key;
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_accountGate)
+            if (attempt == _loginAttemptVersion) _activeQrcodeKey = key;
         return new(login, key);
+    }
+
+    /// <summary>Invalidates pending QR generation, polling and validation without signing out the account.</summary>
+    public void CancelQrLogin()
+    {
+        lock (_accountGate) { ++_loginAttemptVersion; _activeQrcodeKey = null; }
     }
 
     /// <summary>Polls a web QR challenge. A successful poll validates the candidate credentials through the
@@ -340,9 +353,13 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
     {
         if (string.IsNullOrEmpty(qrcodeKey))
             throw new ContentAccessException(ContentFailureKind.InvalidInput, "A QR challenge key is required.");
+        long attempt;
         lock (_accountGate)
+        {
             if (_activeQrcodeKey != qrcodeKey)
                 return new(QrLoginState.Superseded);
+            attempt = _loginAttemptVersion;
+        }
         var (root, setCookies) = await GetJsonWithCookiesAsync(
             Passport + "/x/passport-login/web/qrcode/poll?qrcode_key=" + Uri.EscapeDataString(qrcodeKey),
             cancellationToken);
@@ -358,13 +375,14 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
                 return new(QrLoginState.Expired);
             case 0:
                 lock (_accountGate)
-                    if (_activeQrcodeKey != qrcodeKey)
+                    if (_activeQrcodeKey != qrcodeKey || attempt != _loginAttemptVersion)
                         return new(QrLoginState.Superseded);
                 var cookieText = BilibiliCookieText.FromSetCookieValues(setCookies);
                 if (BilibiliCookieText.FindValue(cookieText, "SESSDATA") is null)
                     throw InvalidResponse("The login response did not contain session credentials.");
                 var account = await GetAccountFromNavAsync(cookieText, cancellationToken);
-                ApplyAccount(account, cookieText);
+                if (!TryApplyAccount(account, cookieText, attempt, cancellationToken))
+                    return new(QrLoginState.Superseded);
                 return new(QrLoginState.Succeeded, cookieText, account);
             default:
                 throw ServiceFailure((int)Number(data, "code"));
@@ -376,8 +394,11 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
     public async Task<BilibiliAccount> ImportCookiesAsync(string cookieText, CancellationToken cancellationToken = default)
     {
         var normalized = BilibiliCookieText.Normalize(cookieText);
+        long attempt;
+        lock (_accountGate) { attempt = ++_loginAttemptVersion; _activeQrcodeKey = null; }
         var account = await GetAccountFromNavAsync(normalized, cancellationToken);
-        ApplyAccount(account, normalized);
+        if (!TryApplyAccount(account, normalized, attempt, cancellationToken))
+            throw new OperationCanceledException("The login attempt was superseded.", cancellationToken);
         return account;
     }
 
@@ -418,17 +439,22 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
         }
     }
 
-    private void ApplyAccount(BilibiliAccount account, string cookieText)
+    private bool TryApplyAccount(BilibiliAccount account, string cookieText, long attempt, CancellationToken ct)
     {
         BilibiliAccountChangedEventArgs args;
         lock (_accountGate)
         {
+            ct.ThrowIfCancellationRequested();
+            if (attempt != _loginAttemptVersion) return false;
             _accountCookies = cookieText;
             _account = account;
+            _activeQrcodeKey = null;
+            ++_loginAttemptVersion;
+            _wbi = null;
             args = new(account, ++_sessionVersion);
         }
-        _wbi = null; // Account changes invalidate account-related cached material.
         AccountChanged?.Invoke(this, args);
+        return true;
     }
 
     private void ClearAccount()
@@ -436,12 +462,15 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
         BilibiliAccountChangedEventArgs args;
         lock (_accountGate)
         {
+            // Signing out must invalidate pending login work even while already anonymous.
+            ++_loginAttemptVersion;
+            _activeQrcodeKey = null;
             if (_accountCookies is null && _account is null) return;
             _accountCookies = null;
             _account = null;
+            _wbi = null;
             args = new(null, ++_sessionVersion);
         }
-        _wbi = null;
         AccountChanged?.Invoke(this, args);
     }
 
@@ -449,20 +478,23 @@ public sealed class BilibiliClient(HttpClient httpClient) : IContentClient
     {
         if (array.ValueKind != JsonValueKind.Array) yield break;
         foreach (var element in array.EnumerateArray())
-        {
-            var url = Text(element, "baseUrl");
-            if (string.IsNullOrEmpty(url)) url = Text(element, "base_url");
-            if (!TryMediaUri(url, out var uri)) continue;
-            var codec = Text(element, "codecs");
-            if (!(codec.StartsWith("avc", StringComparison.OrdinalIgnoreCase) ||
-                  codec.StartsWith("hev", StringComparison.OrdinalIgnoreCase) ||
-                  codec.StartsWith("hvc", StringComparison.OrdinalIgnoreCase) ||
-                  codec.StartsWith("av01", StringComparison.OrdinalIgnoreCase) ||
-                  codec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase) ||
-                  codec.StartsWith("ec-3", StringComparison.OrdinalIgnoreCase) ||
-                  codec.StartsWith("flac", StringComparison.OrdinalIgnoreCase))) continue;
-            yield return new(uri!, codec, Int(element, "id"), Int(element, "width"), Int(element, "height"), Int(element, "bandwidth"));
-        }
+            if (ReadTrack(element) is { } track) yield return track;
+    }
+
+    private static MediaTrack? ReadTrack(JsonElement element)
+    {
+        var url = Text(element, "baseUrl");
+        if (string.IsNullOrEmpty(url)) url = Text(element, "base_url");
+        if (!TryMediaUri(url, out var uri)) return null;
+        var codec = Text(element, "codecs");
+        if (!(codec.StartsWith("avc", StringComparison.OrdinalIgnoreCase) ||
+              codec.StartsWith("hev", StringComparison.OrdinalIgnoreCase) ||
+              codec.StartsWith("hvc", StringComparison.OrdinalIgnoreCase) ||
+              codec.StartsWith("av01", StringComparison.OrdinalIgnoreCase) ||
+              codec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase) ||
+              codec.StartsWith("ec-3", StringComparison.OrdinalIgnoreCase) ||
+              codec.StartsWith("flac", StringComparison.OrdinalIgnoreCase))) return null;
+        return new(uri!, codec, Int(element, "id"), Int(element, "width"), Int(element, "height"), Int(element, "bandwidth"));
     }
 
     private static bool TryMediaUri(string value, out Uri? uri) => Uri.TryCreate(value, UriKind.Absolute, out uri) &&
