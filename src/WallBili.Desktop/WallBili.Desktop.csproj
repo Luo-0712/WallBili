@@ -10,12 +10,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <!-- 设计稿正文/标题用的 Inter（SIL OFL，见 Fonts/LICENSE-Inter.txt）。WPF 只认"磁盘上的字体文件"，
-         pack:// 内嵌字体会静默回退成默认字体（见 DesignFont 的注释与 DesignFontTests），
-         所以随输出目录分发，由 DesignFont 用文件 URI 引用。 -->
-    <Content Include="Fonts/*.ttf" CopyToOutputDirectory="PreserveNewest" />
-    <!-- 字体许可要求随分发保留，一并复制到输出目录。 -->
-    <Content Include="Fonts/LICENSE-Inter.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fonts/*.otf;Fonts/*.ttf;Fonts/*.pdf;Fonts/*.txt;Fonts/README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
     <InternalsVisibleTo Include="WallBili.Desktop.Tests" />

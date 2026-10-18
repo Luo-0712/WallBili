@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using QRCoder;
@@ -19,12 +20,9 @@ public partial class LoginDialog : Window
     private readonly BilibiliClient _client;
     private readonly DispatcherTimer _timer = new() { Interval = PollInterval };
     private readonly CancellationTokenSource _polls = new();
-    private CancellationTokenSource? _qrRequest;
-    private CancellationTokenSource? _importRequest;
-    private CancellationTokenSource? _pollingRequest;
     private QrLoginChallenge? _challenge;
     private DateTimeOffset _deadline;
-    private bool _loaded;
+    private bool _polling;
     private bool _closed;
 
     /// <summary>Set after any login method validated and applied the account; persisted by the owner.</summary>
@@ -37,15 +35,17 @@ public partial class LoginDialog : Window
         _timer.Tick += async (_, _) => await PollAsync();
     }
 
-    private async void Window_Loaded(object sender, RoutedEventArgs e)
+    private async void Window_Loaded(object sender, RoutedEventArgs e) => await RefreshQrAsync();
+
+    private void Caption_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        _loaded = true;
-        if (Tabs.SelectedIndex == 0) await RefreshQrAsync();
+        if (e.ChangedButton == MouseButton.Left && Mouse.LeftButton == MouseButtonState.Pressed) DragMove();
     }
+    private void Caption_Close(object sender, RoutedEventArgs e) => Close();
 
     private async void Tabs_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (_closed || !_loaded || e.Source != Tabs) return;
+        if (_closed || !IsLoaded) return;
         if (Tabs.SelectedIndex == 0) await RefreshQrAsync();
         else StopPolling();
     }
@@ -54,28 +54,21 @@ public partial class LoginDialog : Window
 
     private async Task RefreshQrAsync()
     {
-        if (_closed) return;
-        CancelImport();
         StopPolling();
-        var request = CancellationTokenSource.CreateLinkedTokenSource(_polls.Token);
-        _qrRequest = request;
         QrStatus.Text = "正在获取二维码…";
         try
         {
-            var challenge = await _client.CreateQrLoginAsync(request.Token);
-            if (!IsCurrentQrRequest(request)) return;
-            _challenge = challenge;
+            // Creating a new challenge supersedes the old key: late polls of it are inert.
+            _challenge = await _client.CreateQrLoginAsync(_polls.Token);
             _deadline = DateTimeOffset.Now + MaximumWait;
             RenderQr(_challenge.LoginUrl);
             QrStatus.Text = "请使用 B 站手机客户端扫码";
             _timer.Start();
             await PollAsync();
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (_polls.IsCancellationRequested) { }
         catch (ContentAccessException ex)
         {
-            if (!IsCurrentQrRequest(request)) return;
-            StopPolling();
             QrStatus.Text = ex.Kind is ContentFailureKind.Network or ContentFailureKind.RateLimited
                 ? "暂时无法获取二维码，请检查网络后点击重新获取。"
                 : "获取二维码失败，请稍后点击重新获取。";
@@ -90,8 +83,7 @@ public partial class LoginDialog : Window
         using var png = new PngByteQRCode(data);
         var image = new BitmapImage();
         image.BeginInit();
-        using var stream = new MemoryStream(png.GetGraphic(12));
-        image.StreamSource = stream;
+        image.StreamSource = new MemoryStream(png.GetGraphic(12));
         image.CacheOption = BitmapCacheOption.OnLoad;
         image.EndInit();
         image.Freeze();
@@ -100,20 +92,18 @@ public partial class LoginDialog : Window
 
     private async Task PollAsync()
     {
-        var request = _qrRequest;
-        if (request is null || !IsCurrentQrRequest(request) || ReferenceEquals(_pollingRequest, request) ||
-            _challenge is not { } challenge || !_timer.IsEnabled) return;
+        if (_closed || _polling || _challenge is not { } challenge || !_timer.IsEnabled) return;
         if (DateTimeOffset.Now >= _deadline)
         {
             StopPolling();
             QrStatus.Text = "二维码已过期，请点击“重新获取二维码”。";
             return;
         }
-        _pollingRequest = request;
+        _polling = true;
         try
         {
-            var poll = await _client.PollQrLoginAsync(challenge.QrcodeKey, request.Token);
-            if (!IsCurrentQrRequest(request) || _challenge?.QrcodeKey != challenge.QrcodeKey) return;
+            var poll = await _client.PollQrLoginAsync(challenge.QrcodeKey, _polls.Token);
+            if (_challenge.QrcodeKey != challenge.QrcodeKey) return; // A newer challenge exists; drop this result.
             switch (poll.State)
             {
                 case QrLoginState.WaitingScan:
@@ -127,8 +117,6 @@ public partial class LoginDialog : Window
                     QrStatus.Text = "二维码已过期，请点击“重新获取二维码”。";
                     return;
                 case QrLoginState.Superseded:
-                    StopPolling();
-                    QrStatus.Text = "登录请求已失效，请重新获取二维码。";
                     return;
                 case QrLoginState.Succeeded:
                     StopPolling();
@@ -138,48 +126,32 @@ public partial class LoginDialog : Window
                     return;
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (_polls.IsCancellationRequested) { }
         catch (ContentAccessException ex)
         {
-            if (!IsCurrentQrRequest(request)) return;
             StopPolling();
             QrStatus.Text = ex.Kind is ContentFailureKind.Network or ContentFailureKind.RateLimited
                 ? "网络暂时不可用，请点击重新获取二维码重试。"
                 : "登录状态查询失败，请点击重新获取二维码重试。";
         }
-        finally
-        {
-            // A late completion must not clear a newer generation's in-flight marker.
-            if (ReferenceEquals(_pollingRequest, request)) _pollingRequest = null;
-        }
+        finally { _polling = false; }
     }
 
-    private async void Import_Click(object sender, RoutedEventArgs e) => await ImportAsync();
-
-    private async Task ImportAsync()
+    private async void Import_Click(object sender, RoutedEventArgs e)
     {
-        if (_closed) return;
-        StopPolling();
-        CancelImport();
-        var request = CancellationTokenSource.CreateLinkedTokenSource(_polls.Token);
-        _importRequest = request;
         var text = CookieInput.Text.Trim();
         ImportStatus.Text = "正在验证导入的 Cookie…";
         try
         {
-            var account = await _client.ImportCookiesAsync(text, request.Token);
-            if (!IsCurrentImport(request)) return;
+            var account = await _client.ImportCookiesAsync(text, _polls.Token);
+            StopPolling();
             ImportStatus.Text = $"导入成功：{BilibiliCookieText.Describe(account)}";
             CookieResult = BilibiliCookieText.Normalize(text);
             DialogResult = true;
         }
-        catch (OperationCanceledException)
-        {
-            if (IsCurrentImport(request)) ImportStatus.Text = "登录请求已取消，请重试。";
-        }
+        catch (OperationCanceledException) when (_polls.IsCancellationRequested) { }
         catch (ContentAccessException ex)
         {
-            if (!IsCurrentImport(request)) return;
             ImportStatus.Text = ex.Kind switch
             {
                 ContentFailureKind.InvalidInput => $"导入失败：{ex.Message}",
@@ -188,39 +160,12 @@ public partial class LoginDialog : Window
                 _ => "导入失败：无法验证该 Cookie，请稍后重试。"
             };
         }
-        finally
-        {
-            if (ReferenceEquals(_importRequest, request))
-            {
-                _importRequest = null;
-                request.Dispose();
-            }
-        }
     }
-
-    private bool IsCurrentQrRequest(CancellationTokenSource request) =>
-        !_closed && ReferenceEquals(_qrRequest, request) && !request.IsCancellationRequested;
-
-    private bool IsCurrentImport(CancellationTokenSource request) =>
-        !_closed && ReferenceEquals(_importRequest, request) && !request.IsCancellationRequested;
 
     private void StopPolling()
     {
         _timer.Stop();
         _challenge = null;
-        var request = _qrRequest;
-        _qrRequest = null;
-        request?.Cancel();
-        request?.Dispose();
-        _client.CancelQrLogin();
-    }
-
-    private void CancelImport()
-    {
-        var request = _importRequest;
-        _importRequest = null;
-        request?.Cancel();
-        request?.Dispose();
     }
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -228,7 +173,6 @@ public partial class LoginDialog : Window
         // Closing the dialog (or the whole app) cancels any pending poll before it can replace the session.
         _closed = true;
         StopPolling();
-        CancelImport();
         _polls.Cancel();
         _polls.Dispose();
     }

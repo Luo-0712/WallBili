@@ -25,8 +25,8 @@ internal static class AgentDialogUi
         window.Width = width; window.Height = height;
         window.MinWidth = width; window.MinHeight = Math.Min(height, 550);
         window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        window.SetResourceReference(Control.FontFamilyProperty, "UiFont");
-        window.SetResourceReference(Control.BackgroundProperty, "Surface0");
-        window.SetResourceReference(Control.ForegroundProperty, "Ink900");
+        window.FontFamily = WallBili.Desktop.Presentation.UiTypography.Family;
+        window.SetResourceReference(Control.BackgroundProperty, "Surface");
+        window.SetResourceReference(Control.ForegroundProperty, "Ink");
     }
 }
