@@ -163,8 +163,8 @@ public sealed class ShellTests
     public void ProfilesHaveSeparateStorageAndInstanceSignals()
     {
         var normal = StartupOptions.Parse([]);
-        Assert.True(normal.IsIsolated);
-        Assert.EndsWith(Path.Combine("profiles", "design-rebuild"), normal.DataDirectory);
+        Assert.False(normal.IsIsolated);
+        Assert.Equal(StartupOptions.DefaultDirectory, normal.DataDirectory);
         var other = StartupOptions.Parse(["--data-dir", Path.Combine(Path.GetTempPath(), "wallbili other profile")]);
         Assert.NotEqual(normal.InstanceId, other.InstanceId);
         var same = StartupOptions.Parse(["--data-dir", normal.DataDirectory.ToUpperInvariant()]);
