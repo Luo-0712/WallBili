@@ -29,7 +29,7 @@
                             </Grid.ColumnDefinitions>
                             <ui:LandscapeArt Width="88" Height="80" Opacity="0.8" />
                             <StackPanel Grid.Column="1" Margin="18,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding CurrentTitle}" FontSize="22" FontWeight="SemiBold" ToolTip="{Binding CurrentTitle}" />
+                                <TextBlock Text="{Binding CurrentTitle}" FontSize="22" FontWeight="Medium" ToolTip="{Binding CurrentTitle}" FontFamily="{x:Static ui:UiTypography.StrongFamily}" />
                                 <TextBlock Text="{Binding CurrentUploader}" Style="{StaticResource SecondaryText}" Margin="0,8,0,0" />
                                 <TextBlock Text="{Binding CurrentSource}" FontSize="11" Foreground="{StaticResource Faint}" Margin="0,9,0,0" />
                             </StackPanel>
@@ -71,12 +71,12 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="47" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding Number}" FontSize="10" Foreground="{StaticResource Faint}" VerticalAlignment="Top" Margin="0,3,0,0" />
+                                                <TextBlock Text="{Binding Number}" FontSize="11" Foreground="{StaticResource Faint}" VerticalAlignment="Top" Margin="0,3,0,0" />
                                                 <StackPanel Grid.Column="1">
                                                     <TextBlock Text="{Binding Title}" FontSize="13" Foreground="{StaticResource Ink}" ToolTip="{Binding Title}" />
                                                     <TextBlock Text="{Binding Uploader}" FontSize="11" Foreground="{StaticResource Faint}" Margin="0,5,0,0" />
                                                 </StackPanel>
-                                                <TextBlock Grid.Column="2" Text="{Binding Duration}" HorizontalAlignment="Right" FontSize="10" Foreground="{StaticResource Muted}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Duration}" HorizontalAlignment="Right" FontSize="11" Foreground="{StaticResource Muted}" />
                                             </Grid>
                                         </Border>
                                     </Button>

@@ -30,8 +30,8 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Top" Margin="8,27,0,0" MouseLeftButtonDown="TitleBar_MouseDown">
                     <ui:LineIcon Kind="Sound" Width="25" Height="25" Margin="0,0,12,0" Foreground="{StaticResource Ink}" />
                     <StackPanel>
-                        <TextBlock Text="WallBili" FontSize="20" FontWeight="SemiBold" />
-                        <TextBlock Text="桌面音乐播放器" FontSize="10" Foreground="{StaticResource Muted}" Margin="0,2,0,0" />
+                        <TextBlock Text="WallBili" FontSize="20" FontWeight="Medium" FontFamily="{x:Static ui:UiTypography.StrongFamily}" />
+                        <TextBlock Text="桌面音乐播放器" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,2,0,0" />
                     </StackPanel>
                 </StackPanel>
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -103,7 +103,7 @@
                         <Ellipse Width="3" Height="3" Fill="#555555" Margin="0,0,7,0" />
                         <TextBlock Text="{Binding PlaybackStatus}" FontSize="12" Foreground="{StaticResource Body}" />
                     </StackPanel>
-                    <TextBlock Text="关闭窗口将收起到托盘" FontSize="10" Foreground="{StaticResource Faint}" Margin="0,9,0,18" />
+                    <TextBlock Text="关闭窗口将收起到托盘" FontSize="11" Foreground="{StaticResource Faint}" Margin="0,9,0,18" />
                     <Border Height="1" Background="{StaticResource Line}" />
                     <Button Style="{StaticResource FlatButton}" Click="Hide_Click" HorizontalContentAlignment="Left" Margin="-4,16,0,12">
                         <StackPanel Orientation="Horizontal">
@@ -111,7 +111,7 @@
                             <TextBlock Text="收起到托盘" FontSize="12" />
                         </StackPanel>
                     </Button>
-                    <TextBlock Text="WallBili for Windows" FontSize="10" Foreground="{StaticResource Faint}" />
+                    <TextBlock Text="WallBili for Windows" FontSize="11" Foreground="{StaticResource Faint}" />
                 </StackPanel>
             </Grid>
         </Grid>
@@ -164,7 +164,7 @@
             </Grid.RowDefinitions>
             <Grid>
                 <StackPanel VerticalAlignment="Top">
-                    <TextBlock Text="{Binding PageTitle}" FontSize="27" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding PageTitle}" FontSize="27" FontWeight="Medium" FontFamily="{x:Static ui:UiTypography.StrongFamily}" />
                     <TextBlock Text="{Binding PageSubtitle}" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,9,0,0" />
                 </StackPanel>
                 <Button x:Name="AddSourceButton" Style="{StaticResource PrimaryButton}" Command="{Binding OpenImportCommand}" Width="144" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,7,0,0" Visibility="{Binding CanAddFromHeader, Converter={StaticResource VisibleWhen}}">
@@ -251,8 +251,8 @@
                         <RowDefinition Height="16" />
                         <RowDefinition Height="24" />
                     </Grid.RowDefinitions>
-                    <TextBlock Text="{Binding PositionText}" FontSize="10" Foreground="{StaticResource Body}" />
-                    <TextBlock Text="{Binding DurationText}" FontSize="10" Foreground="{StaticResource Faint}" HorizontalAlignment="Right" />
+                    <TextBlock Text="{Binding PositionText}" FontSize="11" Foreground="{StaticResource Body}" />
+                    <TextBlock Text="{Binding DurationText}" FontSize="11" Foreground="{StaticResource Faint}" HorizontalAlignment="Right" />
                     <Slider x:Name="PlaybackSeek" Grid.Row="1" Minimum="0" Maximum="{Binding DurationSeconds}" Value="{Binding SeekPosition, Mode=TwoWay}" IsEnabled="{Binding HasCurrent}" PreviewMouseLeftButtonDown="Seek_Down" PreviewMouseLeftButtonUp="Seek_Up" PreviewKeyUp="Seek_KeyUp" ToolTip="{Binding SeekText}" AutomationProperties.Name="播放进度" />
                 </Grid>
                 <Grid Grid.Column="5">
@@ -264,7 +264,7 @@
                     </Grid.ColumnDefinitions>
                     <ui:LineIcon Kind="Volume" Width="18" Height="18" />
                     <Slider x:Name="VolumeSlider" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay}" Margin="9,0" VerticalAlignment="Center" PreviewMouseLeftButtonUp="Volume_Commit" PreviewKeyUp="Volume_KeyUp" AutomationProperties.Name="音量" />
-                    <TextBlock Grid.Column="2" Text="{Binding VolumeText}" FontSize="10" Foreground="{StaticResource Muted}" />
+                    <TextBlock Grid.Column="2" Text="{Binding VolumeText}" FontSize="11" Foreground="{StaticResource Muted}" />
                     <Button Grid.Column="3" Style="{StaticResource IconButton}" Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip="桌面、画质与音质设置">
                         <ui:LineIcon Kind="Monitor" />
                     </Button>

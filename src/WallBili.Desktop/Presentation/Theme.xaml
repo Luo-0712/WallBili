@@ -10,20 +10,91 @@
     <SolidColorBrush x:Key="FieldBorder" Color="#DADADA" />
     <SolidColorBrush x:Key="Hover" Color="#F4F4F4" />
     <SolidColorBrush x:Key="Surface" Color="#F8F8F8" />
+    <Style TargetType="ToolTip">
+        <Setter Property="FontFamily" Value="{x:Static ui:UiTypography.Family}" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource Ink}" />
+        <Setter Property="Background" Value="White" />
+        <Setter Property="Padding" Value="10,7" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="#DADADA" BorderThickness="1" CornerRadius="3" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
     <Style TargetType="Window">
         <Setter Property="FontFamily" Value="{x:Static ui:UiTypography.Family}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="Language" Value="zh-CN" />
         <Setter Property="Foreground" Value="{StaticResource Ink}" />
         <Setter Property="Background" Value="White" />
-        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
-        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale" />
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
+    </Style>
+    <Style TargetType="ContextMenu">
+        <Setter Property="FontFamily" Value="{x:Static ui:UiTypography.Family}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource Ink}" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="White" BorderBrush="#DADADA" BorderThickness="1" CornerRadius="4" Padding="4">
+                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style TargetType="MenuItem">
+        <Setter Property="FontFamily" Value="{x:Static ui:UiTypography.Family}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource Ink}" />
+        <Setter Property="Padding" Value="14,8" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="MenuSurface" Background="Transparent" Padding="{TemplateBinding Padding}" CornerRadius="2">
+                        <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="MenuSurface" Property="Background" Value="#F4F4F4" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style TargetType="Separator">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Background="#ECECEC" Margin="10,5" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style TargetType="TextBlock">
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Style.Triggers>
+            <Trigger Property="FontWeight" Value="Medium">
+                <Setter Property="FontFamily" Value="{x:Static ui:UiTypography.EmphasisFamily}" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
     <Style x:Key="SecondaryText" TargetType="TextBlock">
         <Setter Property="FontSize" Value="12" />
@@ -33,7 +104,8 @@
     </Style>
     <Style x:Key="SectionTitle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="16" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontFamily" Value="{x:Static ui:UiTypography.EmphasisFamily}" />
+        <Setter Property="FontWeight" Value="Medium" />
         <Setter Property="Foreground" Value="{StaticResource Ink}" />
     </Style>
     <Style TargetType="Button">
@@ -105,6 +177,7 @@
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="NavSurface" Property="Background" Value="#F4F4F4" />
                             <Setter Property="Foreground" Value="#191919" />
+                            <Setter Property="FontFamily" Value="{x:Static ui:UiTypography.EmphasisFamily}" />
                             <Setter Property="FontWeight" Value="Medium" />
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
@@ -128,6 +201,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter Property="Foreground" Value="#191919" />
+                            <Setter Property="FontFamily" Value="{x:Static ui:UiTypography.EmphasisFamily}" />
                             <Setter Property="FontWeight" Value="Medium" />
                             <Setter TargetName="TabLine" Property="BorderBrush" Value="#191919" />
                         </Trigger>

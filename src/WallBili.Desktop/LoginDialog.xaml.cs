@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using QRCoder;
@@ -35,6 +36,12 @@ public partial class LoginDialog : Window
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e) => await RefreshQrAsync();
+
+    private void Caption_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left && Mouse.LeftButton == MouseButtonState.Pressed) DragMove();
+    }
+    private void Caption_Close(object sender, RoutedEventArgs e) => Close();
 
     private async void Tabs_Changed(object sender, SelectionChangedEventArgs e)
     {

@@ -10,6 +10,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="Fonts/*.otf;Fonts/*.ttf;Fonts/*.pdf;Fonts/*.txt;Fonts/README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
     <InternalsVisibleTo Include="WallBili.Desktop.Tests" />
