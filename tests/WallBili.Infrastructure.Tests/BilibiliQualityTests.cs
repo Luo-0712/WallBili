@@ -166,8 +166,8 @@ public sealed class BilibiliQualityTests
               {"id":30280,"baseUrl":"https://media.example/audio-192","codecs":"mp4a.40.2","bandwidth":192000}],
             "dolby":{"audio":[
               {"id":30250,"baseUrl":"https://media.example/audio-dolby","codecs":"ec-3.1.1","bandwidth":448000}]},
-            "flac":{"audio":[
-              {"id":30251,"baseUrl":"https://media.example/audio-flac","codecs":"flac","bandwidth":900000}]}
+            "flac":{"display":true,"audio":
+              {"id":30251,"baseUrl":"https://media.example/audio-flac","codecs":"fLaC","bandwidth":900000}}
             """;
 
         var media = await ResolveAsync(Dash("""

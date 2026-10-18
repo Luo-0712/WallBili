@@ -221,4 +221,32 @@ public sealed class MediaSelectionTests
         Assert.Equal(new MediaSelectionPreferences(VideoQualityId: "64"), f.Content.Selections[^1]);
         Assert.Equal("https://example.invalid/64-auto", f.Player.Loads[^1].Session.Video.Url.AbsoluteUri);
     }
+
+    [Theory]
+    [InlineData(ContentFailureKind.Network)]
+    [InlineData(ContentFailureKind.RateLimited)]
+    public async Task FailedSelectionWhileRecoveringPreservesTheRetry(ContentFailureKind failure)
+    {
+        await using var f = new LibraryFixture(); await f.SeedAsync();
+        await f.Session.PlayAsync(token: Token);
+        await f.Session.SeekAsync(TimeSpan.FromSeconds(19), Token);
+        var current = f.Session.Snapshot.Playback.CurrentId;
+        f.Content.ResolveFailures[f.Session.Snapshot.Current!.Key] = failure;
+        await f.Session.ReloadAsync(Token);
+        var retryAt = f.Session.Snapshot.NextRecoveryAt;
+        Assert.True(f.Session.Snapshot.RecoveryPending);
+
+        await Assert.ThrowsAsync<ContentAccessException>(() =>
+            f.Session.SetMediaSelectionAsync(new(VideoQualityId: "64"), Token));
+
+        Assert.True(f.Session.Snapshot.RecoveryPending);
+        Assert.Equal(retryAt, f.Session.Snapshot.NextRecoveryAt);
+        f.Content.ResolveFailures.Clear();
+        await f.Session.RetryRecoveryAsync(immediate: true, token: Token);
+        Assert.False(f.Session.Snapshot.RecoveryPending);
+        Assert.Equal(current, f.Session.Snapshot.Playback.CurrentId);
+        Assert.Equal(TimeSpan.FromSeconds(19), f.Player.Loads[^1].Position);
+        Assert.Equal("64", f.Content.Selections[^1].VideoQualityId);
+        Assert.All(f.Session.Snapshot.Queue, q => Assert.Equal(0, q.CompletedCount));
+    }
 }

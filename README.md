@@ -15,6 +15,9 @@ WallBili 是一款面向 Windows 10/11 的 B 站视频壁纸播放器。它可�
 - 自动导入视频的全部分 P
 - 通过链接或 UP 主 ID、合集 ID 导入合集与系列
 - 按来源浏览、刷新和管理内容目录
+- 从已关注的 UP 主中勾选订阅，自动发现新投稿并持续漫游播放，无需复制 URL/BV
+- 通过本机 MCP 接入助手，搜索内容、整理本地命名片单并维护播放队列，长系列可先播首项、后台继续准备
+- 支持手动开始漫游和每日定时开播，分别保存手动队列与漫游进度
 - 自由添加、排序和移除播放队列中的内容
 - 支持顺序播放、列表循环、上一项、下一项、暂停、继续、停止和进度跳转
 - 支持音量调节和播放地址重新加载
@@ -31,7 +34,7 @@ WallBili 是一款面向 Windows 10/11 的 B 站视频壁纸播放器。它可�
 
 - Windows 10 或 Windows 11（x64）
 - mpv 0.41.0
-- 使用框架依赖版安装包时，需要安装 .NET 10 Desktop Runtime
+- 使用框架依赖版安装包时，需要安装 .NET 10 Desktop Runtime 和 ASP.NET Core Runtime 10；自包含版已包含应用及 MCP 转发器所需的 .NET 运行时
 - 能够正常访问 B 站及视频 CDN 的网络环境
 
 > WallBili 不随安装包分发 mpv。请从可信来源单独安装 mpv，并保留 `mpv.exe` 的完整路径。
@@ -39,7 +42,7 @@ WallBili 是一款面向 Windows 10/11 的 B 站视频壁纸播放器。它可�
 ## 安装
 
 1. 获取 WallBili 的 Windows x64 发布包并完整解压。
-2. 如果使用框架依赖版，请先安装 .NET 10 Desktop Runtime；自包含版不需要单独安装 .NET 运行时。
+2. 如果使用框架依赖版，请先安装 .NET 10 Desktop Runtime 和 ASP.NET Core Runtime 10；自包含版不需要单独安装 .NET 运行时。
 3. 单独安装 mpv。
 4. 运行解压目录中的 `app/WallBili.Desktop.exe`。
 5. 首次启动时，在“mpv 路径”中填写 `mpv.exe` 的完整路径。
@@ -93,6 +96,106 @@ WallBili 是一款面向 Windows 10/11 的 B 站视频壁纸播放器。它可�
 
 需要彻底关闭程序时，请在主窗口或托盘菜单中选择“退出”。勾选“登录后在托盘启动并恢复”并应用后，WallBili 会在当前 Windows 用户登录时自动启动。
 
+### 7. 订阅漫游
+
+登录后进入“订阅漫游”，点击“管理 UP 主”，从关注列表中勾选参与漫游的 UP 主。关注列表分页加载，名字筛选只作用于已加载内容；尚未加载到的已有订阅会保留，也可在右侧“已选订阅”中移除。新关注的 UP 主不会自动加入漫游。
+
+保存后会获取每位 UP 主最近 30 条投稿。点击“开始 / 继续漫游”，WallBili 会优先播放未播新作（初始内容池中最近 7 天的投稿），再播放未播旧作，最后轮换最久未播放的旧作。多 P 按顺序播放，“下一视频”会跳过当前 BV 的剩余分 P，且本轮不再播放这一 BV。停止后重新开始会开启新一轮。
+
+后台只记录视频信息，轮到播放时才解析完整分 P 与播放资源，不下载视频。刷新不会打断当前视频；部分 UP 主更新失败时，会保留已获取内容并显示错误，可以稍后重试。需要重新登录和 B 站风控会在界面单独提示。
+
+每天首次启动会检查更新，持续运行时每天 09:00 检查；也可手动刷新。应用完全退出或睡眠期间错过检查，下次启动只补查内容。开启“每天自动开播”并保存时间后，到点空闲会开始漫游；正在手动播放时，等待当前视频在队列中连续安排的分 P 播完，再切入漫游。可以选择“立即开始”或“取消本次”；等待期间暂停、停止、切换视频或账号也会取消本次自动切入。已经暂停时，定时计划不会强制恢复播放。
+
+自动开播默认关闭，时间使用系统本地时区，应用需要保持运行；不会创建系统唤醒任务，退出或睡眠期间错过的开播也不会补执行。订阅、播放记录、计划和漫游进度按 B 站账号独立保存。手动点播会切回手动队列，之后可继续漫游；双方进度互不覆盖。
+
+## 通过 MCP 连接助手
+
+WallBili 提供搜索、视频与分 P 详情、UP 主投稿和原生合集／系列、本地片单、队列及播放控制工具。连接后可以让你的助手处理“找一套摄影入门教程，整理成片单并开始播放”之类的需求。内容选择和自然语言理解由助手完成，WallBili 负责获取内容及实际播放。
+
+### 开启本机服务
+
+1. 保持 WallBili 在窗口或托盘中运行，打开主窗口的“助手连接”。MCP 默认关闭。
+2. 启用 MCP，保留默认端口 `38291` 或填写其他未占用端口，点击应用。界面会显示运行状态；启动失败时可修改端口后重新应用。
+3. 选择“复制 HTTP 配置”或“复制 stdio 配置”，粘贴到所用助手的 MCP 设置。配置格式以助手支持的格式为准。
+
+默认地址为 `http://127.0.0.1:38291/mcp`，采用 Streamable HTTP，仅监听本机回环地址。HTTP 客户端需要发送 `Authorization: Bearer <访问令牌>`。例如：
+
+```json
+{
+  "mcpServers": {
+    "wallbili": {
+      "type": "http",
+      "url": "http://127.0.0.1:38291/mcp",
+      "headers": { "Authorization": "Bearer <从助手连接设置复制的令牌>" }
+    }
+  }
+}
+```
+
+仅支持启动本地命令的助手可以使用发布包中的 stdio 转发器。保持 `app` 与 `mcp-bridge` 为同级目录，以下 `command` 换成解压后的绝对路径，令牌通过环境变量传递：
+
+```json
+{
+  "mcpServers": {
+    "wallbili": {
+      "command": "C:\\Apps\\WallBili\\mcp-bridge\\WallBili.McpBridge.exe",
+      "args": ["--endpoint", "http://127.0.0.1:38291/mcp"],
+      "env": { "WALLBILI_MCP_TOKEN": "<从助手连接设置复制的令牌>" }
+    }
+  }
+}
+```
+
+转发器连接正在运行的 WallBili，不会自动启动应用。关闭助手或转发器后，已接受的整理任务和播放继续；彻底退出 WallBili 会停止服务。重置令牌后需重新复制助手配置。令牌与 B 站登录凭据分开保存，重置令牌不影响登录。
+
+### 工具与内容引用
+
+| 操作 | 工具 |
+|---|---|
+| 搜索与浏览 | `search_content`、`list_creator_content`、`get_content` |
+| 导入来源 | `list_sources`、`import_source`、`refresh_source`、`remove_source` |
+| 保存与维护片单 | `list_playlists`、`get_playlist`、`create_playlist`、`edit_playlist`、`delete_playlist`、`refresh_playlist` |
+| 维护当前安排 | `get_queue`、`edit_queue`、`load_playlist` |
+| 查看及控制播放 | `get_status`、`control_playback` |
+| 后台整理 | `get_task`、`cancel_task`、`retry_task` |
+
+搜索视频使用 `kind: "video"`，搜索 UP 主使用 `kind: "creator"`；UP 主结果的 `uploaderId` 可传给 `list_creator_content`，其 `kind` 为 `videos` 或 `collections`。搜索排序可用 `relevance`，视频另支持 `published`、`views`、`favorites`。列表工具支持 `page`、`pageSize`，读取响应中的分页信息后再请求下一页。
+
+视频搜索会略过付费课程等非视频条目，分页总数沿用上游结果；请用 `hasMore` 判断是否还有下一页。
+
+搜索返回的 `reference` 可以直接传给后续工具。常见引用如下，CID 应来自 `get_content` 返回的真实分 P，合集 ID 和类型应来自查询结果：
+
+```json
+{"kind":"video","bvid":"BV1GJ411x7h7"}
+{"kind":"part","bvid":"BV1GJ411x7h7","cid":101}
+{"kind":"collection","uploaderId":7,"collectionId":11,"collectionKind":"season"}
+{"kind":"playlist","playlistId":"<已保存片单的 GUID>"}
+```
+
+`collectionKind` 可为 `season` 或 `series`。视频引用展开全部分 P，分 P 引用只取指定 CID；原生合集按来源顺序展开，本地片单保留明确提交的顺序。来源记录、片单和播放队列分别维护，删除来源或片单不会删除已经入队的内容。本地片单也可在应用“本地片单”窗口中查看、重命名、排序、移除成员和重试整理。
+
+### 从搜索到播放的调用示例
+
+以下为助手调用工具的顺序，`arguments` 内是对应工具参数；实际候选内容由搜索结果决定。
+
+```json
+{"name":"search_content","arguments":{"query":"摄影 入门 系列","kind":"video","page":1,"pageSize":20}}
+{"name":"get_content","arguments":{"reference":{"kind":"video","bvid":"<搜索返回的 BV>"}}}
+{"name":"create_playlist","arguments":{"name":"摄影入门","references":[{"kind":"video","bvid":"<搜索返回的 BV>"}],"requestId":"photography-create-1"}}
+{"name":"load_playlist","arguments":{"playlistId":"<create_playlist 返回的 playlistId>","mode":"append","autoplay":true,"requestId":"photography-play-1"}}
+{"name":"get_status","arguments":{}}
+```
+
+`create_playlist` 立即返回 `playlistId` 和 `taskId`，可以在后台准备期间调用 `load_playlist`。装载默认追加，`autoplay` 默认 `false`；用户明确要求播放时传 `true`。`startIndex` 是展开后分 P 的从零开始偏移量。首项就绪即可播放，后续内容逐批入队；已准备内容播完但任务仍在运行时显示“等待后续内容”。用户暂停或停止后，后台准备不会擅自恢复播放。
+
+`get_status` 的 `outputActive` 表示播放器是否实际输出，同时返回播放意图、来源、进度、等待、恢复状态和相关任务。创建任务或装载成功仅表示请求已接受，助手应读到 `outputActive: true` 后再告知用户已经开播。向队列追加内容不会打断订阅漫游；明确播放片单会切回手动队列，并保留漫游进度。
+
+修改片单前先读 `get_playlist` 的 `revision`，通过 `expectedRevision` 提交；队列移除、移动、重排、清空、替换和 `load_playlist` 的 `mode: "replace"` 使用 `get_queue` 返回的 `revision`。发生 `Conflict` 时重新读取，避免覆盖用户或其他助手的改动。新建、入队、启动整理及上一项／下一项等操作建议提供唯一 `requestId`；重试同一次操作使用相同 ID 和参数，不同操作使用新 ID。
+
+`requestId` 会在执行前持久登记，成功结果可直接重放。如果进程退出或存储故障导致最终结果无法确认，同 ID 重试返回 `Accepted`，不会重复执行；助手应先查询播放、片单或任务状态，再决定是否发起新的操作。后台最多同时处理 2 个准备任务，待处理及运行任务合计最多 32 个。
+
+通过 `get_task` 查看准备进度及部分失败，`cancel_task` 停止剩余整理并保留已入队内容，`retry_task` 重试失败、部分失败、取消或中断的任务。应用退出会保存已完成内容，重启后未完成任务标为 `interrupted`，由用户或助手明确重试。`refresh_playlist` 手动补充关联来源的新内容，保留既有顺序及手动移除记录。MCP 返回稳定内容身份和状态，不返回 B 站 Cookie、请求头或签名媒体地址。
+
 ## 本地数据
 
 WallBili 的目录、队列、播放进度和设置保存在：
@@ -102,6 +205,8 @@ WallBili 的目录、队列、播放进度和设置保存在：
 ```
 
 登录凭据单独保存在 `%LOCALAPPDATA%\WallBili\auth.dat`，使用 Windows DPAPI 按当前用户加密，不会进入目录数据库或普通设置文件；Cookie 仅发送给必要的 B 站接口。
+
+本地片单、整理任务和助手操作去重记录与目录一起保存在 SQLite 中，按当前 Windows 用户共享；MCP 访问令牌保存在同目录下独立的 `mcp-token.dat`，同样由 Windows DPAPI 按当前用户加密。数据库自动从旧版本迁移并保留目录、队列、漫游记录和播放进度。
 
 移动程序目录前，建议先取消登录后自动启动，再从新位置重新启用。
 

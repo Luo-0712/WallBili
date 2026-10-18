@@ -8,6 +8,49 @@ namespace WallBili.Library.Tests;
 public sealed class MpvQueueTests
 {
     [Fact]
+    public async Task RealMpvScheduledRoamingCompletesPartsRotatesAndKeepsOneProcess()
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(40));
+        var ct = timeout.Token;
+        var clock = new RoamingClock();
+        await using var f = new LibraryFixture(clock);
+        Directory.CreateDirectory(f.DirectoryPath);
+        var media = Path.Combine(f.DirectoryPath, "roaming.mp4");
+        await GenerateAsync(media, "1.2", ct);
+        f.Content.MediaUri = new Uri(media);
+        var player = new MpvQueuePlayer(() => new() { Headless = true });
+        await using var session = new LibrarySession(f.Content, f.Store, player, clock);
+        await using var service = new RoamingService(session, new DiscoveryStub(), clock);
+        await session.InitializeAsync(ct);
+        await session.ImportCollectionAsync(new(1, 10), ct);
+        await session.EnqueueAsync(session.Snapshot.Entries.Select(e => e.Key), ct);
+        await service.SetAccountAsync(99, ct);
+        await service.SaveSubscriptionsAsync([new(1, "UP")], ct);
+        await service.SetScheduleAsync(true, TimeSpan.FromHours(9), ct);
+        await session.PlayAsync(token: ct);
+        var pid = await player.GetProcessIdAsync(ct);
+        clock.Now = clock.Now.AddMinutes(2);
+        await service.TickAsync(ct);
+        Assert.True(session.Snapshot.Roaming!.PendingStart);
+        while (session.Snapshot.Source != PlaybackSource.Roaming) await Task.Delay(20, ct);
+        Assert.Equal(pid, await player.GetProcessIdAsync(ct));
+        while (session.Snapshot.Current?.Key.Bvid != TestContent.B) await Task.Delay(20, ct);
+        Assert.NotNull(session.Snapshot.Roaming!.Videos.Single(v => v.Video.Bvid == TestContent.A).CompletedAt);
+        await session.PauseAsync(ct);
+        await session.PlayManualAsync(token: ct);
+        Assert.Equal(TestContent.B, session.Snapshot.Current!.Key.Bvid);
+        Assert.Equal(pid, await player.GetProcessIdAsync(ct));
+        await service.StartAsync(ct);
+        Assert.Equal(PlaybackSource.Roaming, session.Snapshot.Source);
+        Assert.Equal(TestContent.B, session.Snapshot.Current!.Key.Bvid);
+        Assert.Equal(pid, await player.GetProcessIdAsync(ct));
+        await session.StopAsync(ct);
+        await service.TickAsync(ct);
+        Assert.Equal(PlaybackIntent.Stopped, session.Snapshot.Playback.Intent);
+    }
+
+    [Fact]
     public async Task RealProcessDeathAndOutputReplacementRestorePositionWithoutParallelAudioProcesses()
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);

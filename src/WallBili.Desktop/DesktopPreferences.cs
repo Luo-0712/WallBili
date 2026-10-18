@@ -14,10 +14,17 @@ internal sealed record DesktopPreferences
     /// these properties deserialize with null and keep working.</summary>
     public string? PreferredVideoQualityId { get; init; }
     public string? PreferredAudioQualityId { get; init; }
+    public bool McpEnabled { get; init; }
+    public int McpPort { get; init; } = McpConnectionConfiguration.DefaultPort;
 
     public static DesktopPreferences Read(string path)
     {
-        try { return JsonSerializer.Deserialize<DesktopPreferences>(File.ReadAllText(path)) ?? new(); }
+        try
+        {
+            var preferences = JsonSerializer.Deserialize<DesktopPreferences>(File.ReadAllText(path)) ?? new();
+            return McpConnectionConfiguration.IsValidPort(preferences.McpPort) ? preferences
+                : preferences with { McpPort = McpConnectionConfiguration.DefaultPort };
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return new(); }
     }
 

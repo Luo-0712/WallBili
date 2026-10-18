@@ -4,6 +4,7 @@
 .vscode/
 TestResults/
 work/
+docs/
 *.user
 *.suo
 *.mp4

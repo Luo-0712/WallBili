@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
+    <ProjectReference Include="../../src/WallBili.Mcp/WallBili.Mcp.csproj" />
+    <ProjectReference Include="../../tools/WallBili.McpBridge/WallBili.McpBridge.csproj" />
+  </ItemGroup>
+  <Target Name="CopyMcpBridgeForProcessTests" AfterTargets="Build">
+    <MSBuild Projects="../../tools/WallBili.McpBridge/WallBili.McpBridge.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="McpBridgeTarget" />
+    </MSBuild>
+    <PropertyGroup>
+      <McpBridgeTargetDirectory>@(McpBridgeTarget->'%(RootDir)%(Directory)')</McpBridgeTargetDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <McpBridgeFiles Include="$(McpBridgeTargetDirectory)**/*" />
+    </ItemGroup>
+    <!-- Keep the bridge's .NET-only runtime dependencies together; the test host uses ASP.NET shared assemblies. -->
+    <Copy SourceFiles="@(McpBridgeFiles)" DestinationFiles="@(McpBridgeFiles->'$(OutDir)mcp-bridge/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

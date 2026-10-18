@@ -23,11 +23,19 @@ public sealed class LibraryState
     public List<CatalogSource> Sources { get; set; } = [];
     public List<QueueItem> Queue { get; set; } = [];
     public PlaybackState Playback { get; set; } = new();
+    public Dictionary<long, RoamingAccountState> RoamingAccounts { get; set; } = [];
+    public PlaybackSource ActiveSource { get; set; } = PlaybackSource.Manual;
+    public List<QueueItem> ManualQueue { get; set; } = [];
+    public PlaybackState ManualPlayback { get; set; } = new();
+    public long? ActiveRoamingAccountId { get; set; }
+    public AgentLibraryState Agent { get; set; } = new();
 }
 
 public sealed record LibrarySnapshot(IReadOnlyList<CatalogEntry> Entries, IReadOnlyList<CatalogSource> Sources,
     IReadOnlyList<QueueItem> Queue, PlaybackState Playback, string Notice, bool RecoveryPending = false,
-    DateTimeOffset? NextRecoveryAt = null, bool OutputActive = false, MediaSelectionSummary? Media = null)
+    DateTimeOffset? NextRecoveryAt = null, bool OutputActive = false, MediaSelectionSummary? Media = null,
+    PlaybackSource Source = PlaybackSource.Manual, RoamingSnapshot? Roaming = null,
+    IReadOnlyList<QueueItem>? ManualQueue = null, PlaybackState? ManualPlayback = null, AgentSnapshot? Agent = null)
 {
     public CatalogEntry? Current => Queue.FirstOrDefault(q => q.Id == Playback.CurrentId) is { } item
         ? Entries.FirstOrDefault(e => e.Key == item.Key) : null;
