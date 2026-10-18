@@ -286,6 +286,38 @@ public sealed class ShellTests
         finally { window.Close(); }
     });
 
+    [Fact]
+    public Task OptionSwitchRowsShowASingleKnobInBothStates() => UiThread.Run(async () =>
+    {
+        await using var library = NewLibrary();
+        using var vm = new ShellViewModel(library, new(), preview: true);
+        await library.InitializeAsync();
+        var window = new MainWindow(vm) { ShowActivated = false, ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -18000, Top = -18000 };
+        window.Show();
+        try
+        {
+            vm.Navigate("Workspace");
+            await Arrange(window);
+            var rows = Descendants<CheckBox>(window.ShellRoot)
+                .Where(row => Equals(row.Content, "隐藏画面时继续音乐") || Equals(row.Content, "登录后在托盘启动")).ToArray();
+            Assert.Equal(2, rows.Length);
+            foreach (var row in rows)
+            {
+                var surface = row.Template.FindName("SwitchSurface", row) as Border;
+                Assert.NotNull(surface);
+                foreach (var expected in new[] { false, true })
+                {
+                    row.IsChecked = expected;
+                    await Arrange(window);
+                    Assert.Equal(expected ? Color.FromRgb(0x19, 0x19, 0x19) : Color.FromRgb(0xDA, 0xDA, 0xDA), ((SolidColorBrush)surface!.Background).Color);
+                    // A track drawn with a punched-out knob shows two white circles next to each other.
+                    Assert.Equal(1, WhiteRunsAcrossThePill(window, surface, expected));
+                }
+            }
+        }
+        finally { window.Close(); }
+    });
+
     private static LibrarySession NewLibrary(PreviewSession.Player? player = null) => new(new PreviewSession.Content(), new PreviewSession.Store(PreviewSession.Seed()), player ?? new PreviewSession.Player());
     private static Task Execute(ICommand command, object? parameter = null) => ((AsyncUiCommand)command).ExecuteAsync(parameter);
     private static async Task Arrange(MainWindow window) { window.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout(); }
@@ -297,11 +329,15 @@ public sealed class ShellTests
     }
     private static void Capture(FrameworkElement root, string name)
     {
+        var bitmap = new RenderTargetBitmap((int)Math.Round(root.ActualWidth), (int)Math.Round(root.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(root);
+        Capture(bitmap, name);
+    }
+    private static void Capture(RenderTargetBitmap bitmap, string name)
+    {
         var directory = Environment.GetEnvironmentVariable("WALLBILI_CAPTURE_DIR");
         if (string.IsNullOrEmpty(directory)) return;
         Directory.CreateDirectory(directory);
-        var bitmap = new RenderTargetBitmap((int)Math.Round(root.ActualWidth), (int)Math.Round(root.ActualHeight), 96, 96, PixelFormats.Pbgra32);
-        bitmap.Render(root);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var file = File.Create(Path.Combine(directory, name)); encoder.Save(file);
     }
@@ -313,6 +349,26 @@ public sealed class ShellTests
             if (child is T match) yield return match;
             foreach (var nested in Descendants<T>(child)) yield return nested;
         }
+    }
+    private static int WhiteRunsAcrossThePill(MainWindow window, Border surface, bool isChecked)
+    {
+        var root = window.ShellRoot;
+        var bitmap = new RenderTargetBitmap((int)Math.Round(root.ActualWidth), (int)Math.Round(root.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(root);
+        var pill = surface.TransformToAncestor(root).TransformBounds(new Rect(0, 0, surface.ActualWidth, surface.ActualHeight));
+        var start = (int)Math.Round(pill.Left) + 2; var end = (int)Math.Round(pill.Right) - 2;
+        var stride = (end - start) * 4;
+        var pixels = new byte[stride];
+        bitmap.CopyPixels(new Int32Rect(start, (int)Math.Round(pill.Top + pill.Height / 2), end - start, 1), pixels, stride, 0);
+        Capture(bitmap, $"Switch-{(isChecked ? "on" : "off")}.png");
+        var runs = 0; var white = false;
+        for (var i = 0; i < pixels.Length; i += 4)
+        {
+            var isWhite = pixels[i] > 230 && pixels[i + 1] > 230 && pixels[i + 2] > 230;
+            if (isWhite && !white) runs++;
+            white = isWhite;
+        }
+        return runs;
     }
 }
 
