@@ -11,6 +11,7 @@ function Invoke-Dotnet {
 Invoke-Dotnet publish src/WallBili.Desktop -c Release -r win-x64 --self-contained $standalone -o "$packageDirectory/app" "-p:PublishSingleFile=false" "-m:1"
 Invoke-Dotnet publish tools/WallBili.DesktopProbe -c Release -r win-x64 --self-contained $standalone -o "$packageDirectory/desktop-probe" "-p:PublishSingleFile=false" "-m:1"
 Invoke-Dotnet publish tools/WallBili.McpBridge -c Release -r win-x64 --self-contained $standalone -o "$packageDirectory/mcp-bridge" "-p:PublishSingleFile=false" "-m:1"
+Invoke-Dotnet publish tools/WallBili.AgentCli -c Release -r win-x64 --self-contained $standalone -o "$packageDirectory/agent-cli" "-p:PublishSingleFile=false" "-m:1"
 Copy-Item LICENSE,THIRD-PARTY-NOTICES.md,README.md $packageDirectory
 Copy-Item -Recurse -Force licenses $packageDirectory
 Copy-Item docs/windows-quickstart.md,docs/windows-phase3-checklist.md,docs/phase3-validation.md $packageDirectory

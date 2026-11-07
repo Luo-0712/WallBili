@@ -27,6 +27,7 @@ internal sealed partial class DesktopSession
     {
         if (Client is null || _disposed || _mcpLifetime.IsCancellationRequested) return;
         _mcpTokens = new(Path.Combine(_options.DataDirectory, "mcp-token.dat"));
+        WriteAgentManifest();
         _agent = new(Library, Client, Client, SetAgentVideoVisibleAsync);
         Library.Changed += LibraryChanged;
         try { await RestartMcpAsync(); }
@@ -84,9 +85,20 @@ internal sealed partial class DesktopSession
             if (!_options.Preview) updated.Save(Path.Combine(_options.DataDirectory, "preferences.json"));
             _preferences = updated;
             ViewModel.SyncMcpPreferences(enabled, port);
+            WriteAgentManifest();
         }
         finally { _preferencesGate.Release(); }
         await RestartMcpAsync();
+    }
+
+    /// <summary>Written even when MCP is disabled so an assistant can still find the launcher and
+    /// report the disabled state instead of guessing where the application lives.</summary>
+    private void WriteAgentManifest()
+    {
+        if (_options.Preview) return;
+        var appPath = Environment.ProcessPath;
+        AgentLauncherManifest.Write(_options.DataDirectory, appPath, AgentLauncherManifest.FindCliPath(appPath),
+            McpConnectionConfiguration.Endpoint(_preferences.McpPort), _preferences.McpEnabled, _preferences.McpPort);
     }
 
     internal Task ResetMcpTokenAsync() => RestartMcpAsync(resetToken: true);

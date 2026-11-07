@@ -17,7 +17,7 @@ namespace WallBili.Mcp;
 /// <summary>Owns the loopback-only MCP listener. Application state stays in the supplied control.</summary>
 public sealed class McpServerHost : IAsyncDisposable
 {
-    public const int DefaultPort = 38291;
+    public const int DefaultPort = AgentMcpEndpoint.DefaultPort;
     public const int MaximumRequestBodyBytes = 1024 * 1024;
     public const int MaximumConcurrentRequests = 8;
 

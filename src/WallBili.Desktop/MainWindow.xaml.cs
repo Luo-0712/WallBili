@@ -43,8 +43,10 @@ public partial class MainWindow : Window
         if (!App.Options.Preview)
             _tray = new(Dispatcher, ShowFromTray, () => _viewModel.PlayPauseCommand.Execute(null), () => _viewModel.NextCommand.Execute(null),
                 () => _viewModel.ToggleWallpaperCommand.Execute(null), ExitForSession);
-        await _session.InitializeAsync();
+        // Hide before restoring the session: resuming a saved queue can spend a long time on stream
+        // resolution, and a background start must not leave the window on screen for that whole wait.
         if (App.Options.Background && !App.Options.Preview) Hide();
+        await _session.InitializeAsync();
     }
     private void ViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {

@@ -58,6 +58,10 @@ internal sealed partial class DesktopSession : IAsyncDisposable
 
     public async Task InitializeAsync()
     {
+        // Start the loopback MCP host before playback restoration: resuming a saved queue can wait on
+        // stream resolution, and an assistant should not have to wait for that to connect. Tool calls
+        // made before the library is ready return a structured NotReady result.
+        if (!_options.Preview) await InitializeMcpAsync();
         await ViewModel.RunAsync(async () =>
         {
             if (_auth?.Load() is { } cookies && Client is not null)
@@ -71,7 +75,6 @@ internal sealed partial class DesktopSession : IAsyncDisposable
             RefreshDesktop();
         });
         if (!Library.IsInitialized) return;
-        if (!_options.Preview) await InitializeMcpAsync();
         _timer.Start();
         if (!_options.Preview)
         {

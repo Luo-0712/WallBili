@@ -24,6 +24,9 @@ public partial class App : Application
         var window = new MainWindow();
         MainWindow = window;
         window.Show();
+        // Applying visibility after Show returns is the only reliable place: Loaded can run while
+        // Show is still applying its own Visible state. Session initialization continues hidden.
+        if (Options.Background && !Options.Preview) window.Hide();
         _ = Task.Run(() =>
         {
             try
