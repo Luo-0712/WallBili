@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>WallBili.AgentCli</AssemblyName>
+    <RootNamespace>WallBili.AgentCli</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Same CurrentUser scope as the desktop application's AuthStore, so the launcher can read
+         the MCP access token without duplicating it in plain text. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/WallBili.Core/WallBili.Core.csproj" />
+  </ItemGroup>
+</Project>

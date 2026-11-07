@@ -148,6 +148,21 @@ WallBili 提供搜索、视频与分 P 详情、UP 主投稿和原生合集／�
 
 转发器连接正在运行的 WallBili，不会自动启动应用。关闭助手或转发器后，已接受的整理任务和播放继续；彻底退出 WallBili 会停止服务。重置令牌后需重新复制助手配置。令牌与 B 站登录凭据分开保存，重置令牌不影响登录。
 
+### 让助手自动启动应用
+
+发布包在 `agent-cli` 目录提供 `WallBili.AgentCli.exe`。助手在发起播放类操作前先运行 `ensure`：如果端口上没有服务，它会用 `--background` 静默启动 `app/WallBili.Desktop.exe`（只显示托盘图标），等 MCP 可用后返回；随后用 `call <工具名> '<JSON>'` 调用同一组工具，参数与 `tools/list` 完全一致。
+
+应用启动时会在数据目录写入 `agent.json`，记录应用可执行文件、`agent-cli` 和端点位置，方便助手在应用未运行时找到它。该文件不包含访问令牌；令牌由启动器按当前用户从应用自己的加密令牌文件中读取。
+
+- 应用已在运行或 MCP 在设置里被关闭时，`ensure` 不会重复启动或修改设置；它返回 `mcp_disabled`、`timeout`、`token_invalid` 等稳定状态码和下一步提示。
+- 已经错过 MCP 工具注册的会话会改用 `agent-cli call` 继续完成请求；下次会话时应用仍在运行，就会恢复为原生 MCP 工具。
+- 运行启动器需要 .NET 10；自包含发布包已包含运行时。
+
+```powershell
+agent-cli\WallBili.AgentCli.exe ensure
+agent-cli\WallBili.AgentCli.exe call search_content '{"query":"摄影入门","kind":"video"}'
+```
+
 ### 工具与内容引用
 
 | 操作 | 工具 |

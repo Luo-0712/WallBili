@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using WallBili.Core;
 
 namespace WallBili.Desktop;
 
@@ -7,7 +8,7 @@ namespace WallBili.Desktop;
 /// Bilibili account or the library is included.</summary>
 internal static class McpConnectionConfiguration
 {
-    public const int DefaultPort = 38291;
+    public const int DefaultPort = AgentMcpEndpoint.DefaultPort;
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
     public static bool IsValidPort(int port) => port is >= 1 and <= 65535;
     public static Uri Endpoint(int port) => IsValidPort(port)
