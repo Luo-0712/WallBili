@@ -1,7 +1,9 @@
 <UserControl x:Class="WallBili.Desktop.Views.WorkspaceView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="clr-namespace:WallBili.Desktop.Presentation" xmlns:views="clr-namespace:WallBili.Desktop.Views">
     <Grid>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasEntries, Converter={StaticResource VisibleWhen}}">
-            <Grid MinHeight="638">
+        <ScrollViewer x:Name="WorkspaceScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasEntries, Converter={StaticResource VisibleWhen}}">
+            <!-- Height follows the viewport (never below the design minimum) so the star row stays
+                 bounded: a list inside an infinite-height ScrollViewer can never virtualize. -->
+            <Grid MinHeight="638" Height="{Binding ViewportHeight, ElementName=WorkspaceScroll}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="286" />
                     <RowDefinition Height="1" />

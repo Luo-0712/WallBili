@@ -17,47 +17,65 @@
             <TextBlock Grid.Column="3" Text="操作" FontSize="11" Foreground="#999999" />
             <Border Grid.ColumnSpan="4" Background="#ECECEC" Height="1" VerticalAlignment="Bottom" />
         </Grid>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding SourceRows}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border BorderBrush="#ECECEC" BorderThickness="0,0,0,1" Height="74">
+        <ListBox Grid.Row="1" ItemsSource="{Binding SourceRows}" BorderThickness="0" Background="Transparent"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="True"
+                 VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+            <ListBox.ItemContainerStyle>
+                <!-- Keep the flat look the previous ItemsControl had. -->
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="0" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Focusable" Value="False" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <ContentPresenter />
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Border BorderBrush="#ECECEC" BorderThickness="0,0,0,1" Height="74">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="2.1*" />
+                                <ColumnDefinition Width="1.05*" />
+                                <ColumnDefinition Width="62" />
+                                <ColumnDefinition Width="88" />
+                            </Grid.ColumnDefinitions>
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="2.1*" />
-                                    <ColumnDefinition Width="1.05*" />
-                                    <ColumnDefinition Width="62" />
-                                    <ColumnDefinition Width="88" />
+                                    <ColumnDefinition Width="40" />
+                                    <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="40" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <ui:LandscapeArt Width="38" Height="40" Opacity="0.8" />
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="14,0,12,0">
-                                        <Button Content="{Binding Title}" ToolTip="{Binding Title}" Command="{Binding DataContext.FilterSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" Style="{StaticResource FlatButton}" Foreground="#191919" HorizontalAlignment="Left" Padding="0" FontSize="13" MinHeight="20" />
-                                        <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="#999999" Margin="0,6,0,0" />
-                                    </StackPanel>
-                                </Grid>
-                                <TextBlock Grid.Column="1" Text="{Binding Uploader}" FontSize="12" Foreground="#555555" Margin="0,0,12,0" ToolTip="{Binding Uploader}" />
-                                <TextBlock Grid.Column="2" Text="{Binding Count}" FontSize="12" Foreground="#555555" />
-                                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Style="{StaticResource IconButton}" Width="28" ToolTip="刷新来源" Command="{Binding DataContext.RefreshSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}">
-                                        <ui:LineIcon Kind="Refresh" Width="15" Height="15" />
-                                    </Button>
-                                    <Button Style="{StaticResource IconButton}" Width="28" ToolTip="来源全部加入队列" Command="{Binding DataContext.AddSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}">
-                                        <ui:LineIcon Kind="Plus" Width="15" Height="15" />
-                                    </Button>
-                                    <Button Style="{StaticResource IconButton}" Width="28" ToolTip="移除来源，保留片库与队列" Command="{Binding DataContext.RemoveSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Visibility="{Binding ShowRemove, RelativeSource={RelativeSource AncestorType=views:SourceList}, Converter={StaticResource VisibleWhen}}">
-                                        <ui:LineIcon Kind="Close" Width="14" Height="14" />
-                                    </Button>
+                                <ui:LandscapeArt Width="38" Height="40" Opacity="0.8" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="14,0,12,0">
+                                    <Button Content="{Binding Title}" ToolTip="{Binding Title}" Command="{Binding DataContext.FilterSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Id}" Style="{StaticResource FlatButton}" Foreground="#191919" HorizontalAlignment="Left" Padding="0" FontSize="13" MinHeight="20" />
+                                    <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="#999999" Margin="0,6,0,0" />
                                 </StackPanel>
                             </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+                            <TextBlock Grid.Column="1" Text="{Binding Uploader}" FontSize="12" Foreground="#555555" Margin="0,0,12,0" ToolTip="{Binding Uploader}" />
+                            <TextBlock Grid.Column="2" Text="{Binding Count}" FontSize="12" Foreground="#555555" />
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Style="{StaticResource IconButton}" Width="28" ToolTip="刷新来源" Command="{Binding DataContext.RefreshSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}">
+                                    <ui:LineIcon Kind="Refresh" Width="15" Height="15" />
+                                </Button>
+                                <Button Style="{StaticResource IconButton}" Width="28" ToolTip="来源全部加入队列" Command="{Binding DataContext.AddSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}">
+                                    <ui:LineIcon Kind="Plus" Width="15" Height="15" />
+                                </Button>
+                                <Button Style="{StaticResource IconButton}" Width="28" ToolTip="移除来源，保留片库与队列" Command="{Binding DataContext.RemoveSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Visibility="{Binding ShowRemove, RelativeSource={RelativeSource AncestorType=views:SourceList}, Converter={StaticResource VisibleWhen}}">
+                                    <ui:LineIcon Kind="Close" Width="14" Height="14" />
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
     </Grid>
 </UserControl>

@@ -64,8 +64,29 @@
                             <ui:LineIcon DockPanel.Dock="Right" Kind="Chevron" Width="12" Height="12" />
                             <TextBlock Text="我的来源" Style="{StaticResource SecondaryText}" />
                         </DockPanel>
-                        <ItemsControl ItemsSource="{Binding SourceRows}" MaxHeight="180">
-                            <ItemsControl.ItemTemplate>
+                        <ListBox ItemsSource="{Binding SourceRows}" MaxHeight="180" BorderThickness="0" Background="Transparent"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="True"
+                                 VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+                            <ListBox.ItemContainerStyle>
+                                <!-- Strip the ListBoxItem chrome so this keeps the plain look the
+                                     previous ItemsControl had; only virtualization is new. -->
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0" />
+                                    <Setter Property="BorderThickness" Value="0" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Focusable" Value="False" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <ContentPresenter />
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Button Style="{StaticResource SidebarSourceButton}" Command="{Binding DataContext.FilterSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Id}" ToolTip="{Binding Title}">
                                         <Grid>
@@ -80,8 +101,8 @@
                                         </Grid>
                                     </Button>
                                 </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                         <Button Margin="0,16,0,0" HorizontalContentAlignment="Left" Style="{StaticResource FlatButton}" Padding="12,8" Command="{Binding OpenImportCommand}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:LineIcon Kind="Plus" Width="16" Height="16" Margin="0,0,12,0" />
