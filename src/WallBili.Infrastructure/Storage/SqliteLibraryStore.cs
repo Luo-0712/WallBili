@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using WallBili.Core;
@@ -7,6 +8,37 @@ namespace WallBili.Infrastructure.Storage;
 /// <summary>Small-library transactional snapshots. No temporary playback resources are accepted by this schema.</summary>
 public sealed class SqliteLibraryStore(string path) : ILibraryStore
 {
+    // Table-level write cache. A steady-state checkpoint moves one number in playback, but the catalog
+    // behind it is hundreds of rows; rewriting those every second dominated the save cost. Each table is
+    // compared against exactly what this instance last committed, so an unchanged table is not touched
+    // at all and a fresh instance (tests, a new process) still writes the whole library once.
+    private string[]? _savedEntries, _savedSources, _savedQueue;
+    private string? _savedPlayback, _savedExtension, _savedAgent;
+    // Catalog records are immutable and edits replace them, so a list whose elements are all the same
+    // references as last time serializes to the same text: reuse it and a position checkpoint pays no
+    // catalog serialization at all. The returned array is read-only by contract (compared and inserted).
+    private readonly RowCache<CatalogEntry> _entryPayloads = new();
+    private readonly RowCache<CatalogSource> _sourcePayloads = new();
+    private readonly RowCache<QueueItem> _queuePayloads = new();
+
+    private sealed class RowCache<T>
+    {
+        private T[] _rows = [];
+        private string[] _payloads = [];
+        public string[] Payloads(T[] rows, Func<T, string> serialize)
+        {
+            if (rows.Length == _payloads.Length)
+            {
+                var same = true;
+                for (var i = 0; i < rows.Length; i++)
+                    if (!ReferenceEquals(rows[i], _rows[i])) { same = false; break; }
+                if (same) return _payloads;
+            }
+            _rows = rows;
+            _payloads = rows.Select(serialize).ToArray();
+            return _payloads;
+        }
+    }
     private async Task<SqliteConnection> OpenAsync(CancellationToken ct)
     {
         var fullPath = Path.GetFullPath(path);
@@ -113,31 +145,61 @@ public sealed class SqliteLibraryStore(string path) : ILibraryStore
         ValidatePlayback(state.Playback);
         ValidateExtension(additional, state.Entries);
         ValidateAgent(state.Agent);
+
+        // Signatures are the exact text this instance last committed, so an unchanged table is not
+        // rewritten. The catalog payload already carries its own key, hence the payload alone
+        // identifies an entry or source row; queue rows are stored as columns, so they sign as columns.
+        var entries = _entryPayloads.Payloads(state.Entries.ToArray(), static e => JsonSerializer.Serialize(e));
+        var sources = _sourcePayloads.Payloads(state.Sources.ToArray(), static s => JsonSerializer.Serialize(s));
+        var queue = _queuePayloads.Payloads(state.Queue.ToArray(), static item =>
+            string.Create(CultureInfo.InvariantCulture, $"{item.Id:N}|{item.Key.Bvid}|{item.Key.Cid}|{item.CompletedCount}"));
+        var playback = JsonSerializer.Serialize(state.Playback);
+        var extension = JsonSerializer.Serialize(additional);
+        var agent = JsonSerializer.Serialize(state.Agent);
+        // queue references entries by (bvid,cid). Deleting a rewritten entries table while old queue
+        // rows still point at it would fail the immediate foreign-key check, so the two tables always
+        // move together; every other table stands on its own.
+        var rewriteCatalog = !Unchanged(_savedEntries, entries) || !Unchanged(_savedQueue, queue);
+        var rewriteSources = !Unchanged(_savedSources, sources);
+
         await using var db = await OpenAsync(cancellationToken);
         using var transaction = db.BeginTransaction();
         using var command = db.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "DELETE FROM queue; DELETE FROM entries; DELETE FROM sources; DELETE FROM playback; DELETE FROM extension_state;";
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        for (var i = 0; i < state.Entries.Count; i++)
+        if (rewriteCatalog)
         {
-            var entry = state.Entries[i];
-            await InsertAsync("INSERT INTO entries VALUES($a,$b,$c,$d)", cancellationToken,
-                entry.Key.Bvid, entry.Key.Cid, i, JsonSerializer.Serialize(entry));
+            command.CommandText = "DELETE FROM queue; DELETE FROM entries;";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            for (var i = 0; i < state.Entries.Count; i++)
+            {
+                var entry = state.Entries[i];
+                await InsertAsync("INSERT INTO entries VALUES($a,$b,$c,$d)", cancellationToken,
+                    entry.Key.Bvid, entry.Key.Cid, i, entries[i]);
+            }
+            for (var i = 0; i < state.Queue.Count; i++)
+            {
+                var item = state.Queue[i];
+                await InsertAsync("INSERT INTO queue VALUES($a,$b,$c,$d,$e)", cancellationToken,
+                    item.Id.ToString(), i, item.Key.Bvid, item.Key.Cid, item.CompletedCount);
+            }
         }
-        for (var i = 0; i < state.Sources.Count; i++)
-            await InsertAsync("INSERT INTO sources VALUES($a,$b,$c)", cancellationToken,
-                state.Sources[i].Id, i, JsonSerializer.Serialize(state.Sources[i]));
-        for (var i = 0; i < state.Queue.Count; i++)
+        if (rewriteSources)
         {
-            var item = state.Queue[i];
-            await InsertAsync("INSERT INTO queue VALUES($a,$b,$c,$d,$e)", cancellationToken,
-                item.Id.ToString(), i, item.Key.Bvid, item.Key.Cid, item.CompletedCount);
+            command.CommandText = "DELETE FROM sources;";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            for (var i = 0; i < state.Sources.Count; i++)
+                await InsertAsync("INSERT INTO sources VALUES($a,$b,$c)", cancellationToken,
+                    state.Sources[i].Id, i, sources[i]);
         }
-        await InsertAsync("INSERT INTO playback VALUES(1,$a)", cancellationToken, JsonSerializer.Serialize(state.Playback));
-        await InsertAsync("INSERT INTO extension_state VALUES(1,$a)", cancellationToken, JsonSerializer.Serialize(additional));
-        await InsertAsync("INSERT OR REPLACE INTO agent_state VALUES(1,$a)", cancellationToken, JsonSerializer.Serialize(state.Agent));
+        if (playback != _savedPlayback)
+            await InsertAsync("INSERT OR REPLACE INTO playback VALUES(1,$a)", cancellationToken, playback);
+        if (extension != _savedExtension)
+            await InsertAsync("INSERT OR REPLACE INTO extension_state VALUES(1,$a)", cancellationToken, extension);
+        if (agent != _savedAgent)
+            await InsertAsync("INSERT OR REPLACE INTO agent_state VALUES(1,$a)", cancellationToken, agent);
         transaction.Commit();
+        (_savedEntries, _savedSources, _savedQueue, _savedPlayback, _savedExtension, _savedAgent) =
+            (entries, sources, queue, playback, extension, agent);
 
         async Task InsertAsync(string sql, CancellationToken ct, params object[] values)
         {
@@ -147,6 +209,9 @@ public sealed class SqliteLibraryStore(string path) : ILibraryStore
             await command.ExecuteNonQueryAsync(ct);
         }
     }
+
+    private static bool Unchanged(string[]? saved, string[] current) =>
+        saved is not null && saved.Length == current.Length && saved.SequenceEqual(current);
 
     // Only the new stable identities and checkpoints are persisted here. Do not serialize LibraryState:
     // its catalog and active queue already have their own tables, and it may grow transient fields later.
