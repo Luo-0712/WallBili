@@ -358,6 +358,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         if (_refreshing) return;
         _refreshing = true;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             _snapshot = _library.Snapshot;
@@ -369,7 +370,24 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 nameof(CurrentSource), nameof(PlaybackStatus), nameof(PlayButtonLabel), nameof(PositionText), nameof(DurationText), nameof(DurationSeconds), nameof(ModeId), nameof(ModeDescription), nameof(QualityStatus));
             CommandManager.InvalidateRequerySuggested();
         }
-        finally { _refreshing = false; }
+        finally
+        {
+            _refreshing = false;
+            PerfLog.Write("ui-refresh", FormattableString.Invariant(
+                $"elapsed_ms={sw.Elapsed.TotalMilliseconds:F1} entries={_snapshot.Entries.Count} queue={_snapshot.Queue.Count} sources={_snapshot.Sources.Count}"));
+            // The data model is now in place; WPF still has to measure/arrange the new rows on this
+            // same thread. Mark the deadline so the window's LayoutUpdated probe can time that cost.
+            System.Threading.Volatile.Write(ref _layoutDueStamp, System.Diagnostics.Stopwatch.GetTimestamp());
+        }
+    }
+
+    private long _layoutDueStamp;
+    /// <summary>True once per refresh, when the layout pass that follows it finally completes.</summary>
+    internal bool TryFinishLayout(out double elapsedMs)
+    {
+        var stamp = System.Threading.Interlocked.Exchange(ref _layoutDueStamp, 0);
+        elapsedMs = stamp == 0 ? 0 : (System.Diagnostics.Stopwatch.GetTimestamp() - stamp) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        return stamp != 0;
     }
 
     private string FindSource(ContentKey key) => _snapshot.Sources.FirstOrDefault(s => s.Members.Contains(key))?.Title ?? "本地片库";
@@ -378,7 +396,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var rows = _snapshot.Sources.Select(source => new SourceRow(source.Id, source.Title,
             _snapshot.Entries.FirstOrDefault(e => source.Members.Contains(e.Key))?.Uploader ?? "未知 UP 主", source.Members.Count,
             source.Problems.Count > 0 ? $"{source.Problems.Count} 个视频不可访问" : (source.Collection?.Kind == CollectionKind.Series ? "系列" : source.Collection is null ? "视频" : "合集") + " · " + (source.RefreshedAt.LocalDateTime.Date == DateTime.Today ? "今天已刷新" : source.RefreshedAt.ToLocalTime().ToString("MM-dd 已刷新")), source.Members)).ToArray();
-        Sync(SourceRows, rows);
+        // Perf branch only: WALLBILI_PERF_SOURCE_CAP caps the rendered source list so the layout
+        // cost of the two non-virtualizing ItemsControls can be measured against the full library.
+        var displayRows = rows;
+        if (int.TryParse(Environment.GetEnvironmentVariable("WALLBILI_PERF_SOURCE_CAP"), out var cap) && displayRows.Length > cap)
+            displayRows = displayRows[..cap];
+        Sync(SourceRows, displayRows);
         Sync(SourceOptions, new[] { new SelectOption("", "全部来源") }.Concat(rows.Select(r => new SelectOption(r.Id, r.Title))).ToArray());
         if (SourceFilter.Length > 0 && !_snapshot.Sources.Any(s => s.Id == SourceFilter)) SourceFilter = "";
     }

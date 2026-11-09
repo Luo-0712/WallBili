@@ -51,6 +51,8 @@ public sealed class MpvQueuePlayer(Func<MpvPlayerOptions>? options = null) : IQu
 
     private void OnEvent(object? sender, MpvEventArgs args)
     {
+        if (args.EventName is "start-file" or "file-loaded" or "end-file" or "playback-restart")
+            PerfLog.Write("mpv-event", $"event={args.EventName}");
         if (args.EventName != "start-file") return;
         lock (_sync)
             if (_loading is { } generation && args.Data.TryGetProperty("playlist_entry_id", out var id))

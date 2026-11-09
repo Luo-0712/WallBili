@@ -61,18 +61,18 @@ internal sealed partial class DesktopSession : IAsyncDisposable
         // Start the loopback MCP host before playback restoration: resuming a saved queue can wait on
         // stream resolution, and an assistant should not have to wait for that to connect. Tool calls
         // made before the library is ready return a structured NotReady result.
-        if (!_options.Preview) await InitializeMcpAsync();
+        if (!_options.Preview) { var s = PerfLog.Step("boot.mcp"); try { await InitializeMcpAsync(); } finally { s(); } }
         await ViewModel.RunAsync(async () =>
         {
             if (_auth?.Load() is { } cookies && Client is not null)
-                try { await Client.ImportCookiesAsync(cookies); }
+                try { var s = PerfLog.Step("boot.auth"); try { await Client.ImportCookiesAsync(cookies); } finally { s(); } }
                 catch (ContentAccessException ex) when (ex.Kind is ContentFailureKind.Network or ContentFailureKind.RateLimited) { }
                 catch (ContentAccessException) { _auth.Clear(); }
-            await Library.InitializeAsync();
+            { var s = PerfLog.Step("boot.library-load"); try { await Library.InitializeAsync(); } finally { s(); } }
             _libraryReady = true;
             if (_roaming is not null) await _roaming.SetAccountAsync(Client?.CurrentAccount()?.Uid);
             ViewModel.SetAccount(Client?.CurrentAccount());
-            RefreshDesktop();
+            { var s = PerfLog.Step("boot.refresh-desktop"); try { RefreshDesktop(); } finally { s(); } }
         });
         if (!Library.IsInitialized) return;
         _timer.Start();
@@ -88,11 +88,14 @@ internal sealed partial class DesktopSession : IAsyncDisposable
         _ticking = true;
         try
         {
-            var recreated = RefreshDesktop();
-            if (recreated) await Library.RebindOutputAsync();
-            await Library.CheckpointAsync();
+            var s1 = PerfLog.Step("tick.refresh-desktop");
+            bool recreated;
+            try { recreated = RefreshDesktop(); }
+            finally { s1(); }
+            if (recreated) { var s2 = PerfLog.Step("tick.rebind-output"); try { await Library.RebindOutputAsync(); } finally { s2(); } }
+            { var s3 = PerfLog.Step("tick.checkpoint"); try { await Library.CheckpointAsync(); } finally { s3(); } }
             await Library.RetryRecoveryAsync();
-            if (_roaming is not null) await _roaming.TickAsync();
+            if (_roaming is not null) { var s4 = PerfLog.Step("tick.roaming"); try { await _roaming.TickAsync(); } finally { s4(); } }
         }
         catch (Exception) { ViewModel.Report("暂时无法同步播放状态，队列与进度会保留。请检查播放器或重试。"); }
         finally { _ticking = false; }

@@ -54,6 +54,13 @@ public sealed class MpvPlayer : IAsyncDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
+        var step = PerfLog.Step("mpv-start");
+        try { await StartAsyncCore(cancellationToken).ConfigureAwait(false); }
+        finally { step(); }
+    }
+
+    private async Task StartAsyncCore(CancellationToken cancellationToken)
+    {
         await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

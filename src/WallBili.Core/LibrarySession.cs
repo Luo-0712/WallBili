@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace WallBili.Core;
 
 /// <summary>Serializes queue edits, EOF callbacks and checkpoints. A failed traversal visits each item at most once.</summary>
@@ -420,6 +422,13 @@ public sealed partial class LibrarySession : IAsyncDisposable
 
     private async Task StartAsync(int index, double seconds, bool paused, CancellationToken ct)
     {
+        var step = PerfLog.Step("restore-chain");
+        try { await StartAsyncCore(index, seconds, paused, ct); }
+        finally { step(); }
+    }
+
+    private async Task StartAsyncCore(int index, double seconds, bool paused, CancellationToken ct)
+    {
         _recoveryPending = false;
         await StopPlayerAsync(ct);
         var attempted = new HashSet<Guid>();
@@ -435,6 +444,7 @@ public sealed partial class LibrarySession : IAsyncDisposable
                     Intent = paused ? PlaybackIntent.Paused : PlaybackIntent.Playing };
                 ActivatePreparedQueue(item.Id, paused);
                 var playbackId = Guid.NewGuid();
+                PerfLog.Write("restore-item", $"index={index} bvid={item.Key.Bvid} cid={item.Key.Cid}");
                 try
                 {
                     if (_suspended) return;
@@ -580,16 +590,23 @@ public sealed partial class LibrarySession : IAsyncDisposable
         var item = items[index]; items.RemoveAt(index); items.Insert(target, item);
     }
 
-    private async Task ExecuteAsync(Func<CancellationToken, Task> action, CancellationToken token, bool initializing = false)
+    private async Task ExecuteAsync(Func<CancellationToken, Task> action, CancellationToken token, bool initializing = false,
+        [System.Runtime.CompilerServices.CallerMemberName] string op = "")
     {
+        var enqueued = Stopwatch.GetTimestamp();
         await _gate.WaitAsync(token);
+        var gateMs = (Stopwatch.GetTimestamp() - enqueued) * 1000.0 / Stopwatch.Frequency;
+        var actionStart = Stopwatch.GetTimestamp();
+        double saveMs = -1;
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (!_initialized && !initializing) throw new InvalidOperationException("Initialize the library before use.");
             await action(token);
             SaveActiveContext();
+            var saveStart = Stopwatch.GetTimestamp();
             await _store.SaveAsync(_state, token);
+            saveMs = (Stopwatch.GetTimestamp() - saveStart) * 1000.0 / Stopwatch.Frequency;
         }
         catch
         {
@@ -600,6 +617,8 @@ public sealed partial class LibrarySession : IAsyncDisposable
         }
         finally
         {
+            PerfLog.Write("execute-op", FormattableString.Invariant(
+                $"op={op} gate_ms={gateMs:F1} action_ms={(Stopwatch.GetTimestamp() - actionStart) * 1000.0 / Stopwatch.Frequency:F1} save_ms={saveMs:F1} entries={_state.Entries.Count} queue={_state.Queue.Count}"));
             Volatile.Write(ref _snapshot, new(_state.Entries.ToArray(), _state.Sources.ToArray(),
                 _state.Queue.ToArray(), _state.Playback, _notice, _recoveryPending, _recoveryPending ? _retryAt : null,
                 _activePlayback is not null && !_recoveryPending, _media, _state.ActiveSource, CreateRoamingSnapshot(),

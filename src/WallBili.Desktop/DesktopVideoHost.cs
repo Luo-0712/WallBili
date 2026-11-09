@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
+using WallBili.Core;
 
 namespace WallBili.Desktop;
 
@@ -19,6 +20,7 @@ internal sealed class DesktopVideoHost : IDisposable
     private HwndSource? _output;
     private nint _parent;
     private uint _parentPid;
+    private (int x, int y, int w, int h)? _lastGeometry;
     public bool Attached { get; private set; }
     public string Status { get; private set; } = "正在连接桌面";
     public nint Handle => _output?.Handle ?? 0;
@@ -81,6 +83,13 @@ internal sealed class DesktopVideoHost : IDisposable
         }
         var origin = new Native.Point { X = target.Left, Y = target.Top };
         Native.MapWindowPoints(0, parent, ref origin, 1);
+        // Perf instrumentation: log only actual geometry changes so steady-state ticks stay quiet.
+        var geometry = (origin.X, origin.Y, target.Width, target.Height);
+        if (_lastGeometry != geometry)
+        {
+            PerfLog.Write("desktop-geometry-change", $"x={origin.X} y={origin.Y} w={target.Width} h={target.Height} parent={parent}");
+            _lastGeometry = geometry;
+        }
         // SWP_NOZORDER | SWP_NOACTIVATE: do not reorder any sibling or activate the host.
         if (!Native.SetWindowPos(Handle, 0, origin.X, origin.Y, target.Width, target.Height, 0x0010 | 0x0004))
         {
@@ -98,6 +107,7 @@ internal sealed class DesktopVideoHost : IDisposable
     private static nint FindExistingWallpaperHost()
     {
         nint found = 0;
+        var search = PerfLog.Step("wallpaper-host-search");
         Native.EnumWindows((window, _) =>
         {
             var defView = Native.FindWindowEx(window, 0, "SHELLDLL_DefView", null);
@@ -108,6 +118,8 @@ internal sealed class DesktopVideoHost : IDisposable
             if (found == 0) found = NextWorkerHost(window, defView);
             return found == 0;
         }, 0);
+        search();
+        if (found == 0) PerfLog.Write("wallpaper-host-search-miss");
         return found;
     }
 

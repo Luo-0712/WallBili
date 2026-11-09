@@ -35,11 +35,20 @@ public partial class MainWindow : Window
         PlaybackSeek.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler((_, _) => CommitSeek()), true);
         VolumeSlider.PreviewMouseLeftButtonDown += (_, _) => _viewModel.IsAdjustingVolume = true;
         VolumeSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler((_, _) => CommitVolume()), true);
+        // Perf instrumentation: the first layout pass after a data refresh runs on this thread after
+        // Refresh returns, so nothing we log inside ShellViewModel can see it. LayoutUpdated fires once
+        // the pending measure/arrange completes; the deadline is armed by Refresh.
+        LayoutUpdated += (_, _) =>
+        {
+            if (_viewModel.TryFinishLayout(out var elapsedMs))
+                WallBili.Core.PerfLog.Write("ui-layout", FormattableString.Invariant($"elapsed_ms={elapsedMs:F1}"));
+        };
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         if (_session is null) return;
+        WallBili.Core.PerfLog.Write("boot.window-loaded");
         if (!App.Options.Preview)
             _tray = new(Dispatcher, ShowFromTray, () => _viewModel.PlayPauseCommand.Execute(null), () => _viewModel.NextCommand.Execute(null),
                 () => _viewModel.ToggleWallpaperCommand.Execute(null), ExitForSession);
@@ -47,6 +56,7 @@ public partial class MainWindow : Window
         // resolution, and a background start must not leave the window on screen for that whole wait.
         if (App.Options.Background && !App.Options.Preview) Hide();
         await _session.InitializeAsync();
+        WallBili.Core.PerfLog.Write("boot.initialize-complete");
     }
     private void ViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
