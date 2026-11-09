@@ -352,9 +352,13 @@ public sealed partial class LibrarySession : IAsyncDisposable
         await StartAsync(CurrentIndex(), _state.Playback.PositionSeconds, _state.Playback.Intent != PlaybackIntent.Playing, ct);
     }, token);
 
-    public Task CheckpointAsync(CancellationToken token = default) => ExecuteAsync(async ct =>
+    public Task CheckpointAsync(CancellationToken token = default) => ExecuteTickAsync(async ct =>
     {
+        var before = _state.Playback;
+        var recoveryBefore = _recoveryPending;
         await CapturePositionAsync(ct);
+        // A checkpoint with no progress delta has nothing to persist and nothing for the UI to show.
+        var changed = !_state.Playback.Equals(before) || _recoveryPending != recoveryBefore;
         if (_activePlayback is not null && _state.Playback.Intent == PlaybackIntent.Playing)
         {
             if (Math.Abs(_lastPosition - _state.Playback.PositionSeconds) > .1)
@@ -362,21 +366,23 @@ public sealed partial class LibrarySession : IAsyncDisposable
                 _lastPosition = _state.Playback.PositionSeconds; _lastAdvance = _time.GetUtcNow();
             }
             else if (_time.GetUtcNow() - _lastAdvance >= TimeSpan.FromSeconds(45))
-                await ScheduleRecoveryAsync("播放缓冲超时", ct);
+            { await ScheduleRecoveryAsync("播放缓冲超时", ct); changed = true; }
         }
+        return changed;
     }, token);
 
     /// <summary>Retries only the current stable identity, with capped backoff. A user stop cancels recovery.</summary>
-    public Task RetryRecoveryAsync(bool immediate = false, CancellationToken token = default) => ExecuteAsync(async ct =>
+    public Task RetryRecoveryAsync(bool immediate = false, CancellationToken token = default) => ExecuteTickAsync(async ct =>
     {
         if (_recoveryPending && _state.ActiveSource == PlaybackSource.Roaming && _pendingMetadataBvid is not null &&
             _state.Playback.Intent == PlaybackIntent.Playing &&
             !_suspended && (immediate || _time.GetUtcNow() >= _retryAt))
-        { await StartNextRoamingVideoAsync(ct); return; }
+        { await StartNextRoamingVideoAsync(ct); return true; }
         if (!_recoveryPending || _suspended || CurrentIndex() < 0 || _state.Playback.Intent == PlaybackIntent.Stopped ||
-            (!immediate && _time.GetUtcNow() < _retryAt)) return;
+            (!immediate && _time.GetUtcNow() < _retryAt)) return false;
         _recoveryPending = false;
         await StartAsync(CurrentIndex(), _state.Playback.PositionSeconds, _state.Playback.Intent == PlaybackIntent.Paused, ct);
+        return true;
     }, token);
 
     /// <summary>System sleep preserves playback intent without leaving an audible process running.</summary>
@@ -619,16 +625,61 @@ public sealed partial class LibrarySession : IAsyncDisposable
         {
             PerfLog.Write("execute-op", FormattableString.Invariant(
                 $"op={op} gate_ms={gateMs:F1} action_ms={(Stopwatch.GetTimestamp() - actionStart) * 1000.0 / Stopwatch.Frequency:F1} save_ms={saveMs:F1} entries={_state.Entries.Count} queue={_state.Queue.Count}"));
-            Volatile.Write(ref _snapshot, new(_state.Entries.ToArray(), _state.Sources.ToArray(),
-                _state.Queue.ToArray(), _state.Playback, _notice, _recoveryPending, _recoveryPending ? _retryAt : null,
-                _activePlayback is not null && !_recoveryPending, _media, _state.ActiveSource, CreateRoamingSnapshot(),
-                ManualItems.ToArray(), _state.ActiveSource == PlaybackSource.Manual ? _state.Playback : _state.ManualPlayback,
-                new(_state.Agent.Playlists.ToArray(), _state.Agent.Tasks.ToArray(), _state.Agent.QueueRevision,
-                    _preparedQueue is { Waiting: true })));
+            PublishSnapshot();
             _gate.Release();
             Changed?.Invoke(this, EventArgs.Empty);
         }
     }
+
+    /// <summary>Background-tick path: the action reports whether anything observable changed. A tick that
+    /// moved nothing skips the whole-library rewrite, the snapshot rebuild and the Changed event, so the
+    /// per-second checkpoint costs nothing while the player is idle instead of refreshing the UI twice.</summary>
+    private async Task ExecuteTickAsync(Func<CancellationToken, Task<bool>> action, CancellationToken token,
+        [System.Runtime.CompilerServices.CallerMemberName] string op = "")
+    {
+        var enqueued = Stopwatch.GetTimestamp();
+        await _gate.WaitAsync(token);
+        var gateMs = (Stopwatch.GetTimestamp() - enqueued) * 1000.0 / Stopwatch.Frequency;
+        var actionStart = Stopwatch.GetTimestamp();
+        double saveMs = -1;
+        var changed = false;
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_initialized) throw new InvalidOperationException("Initialize the library before use.");
+            changed = await action(token);
+            if (changed)
+            {
+                SaveActiveContext();
+                var saveStart = Stopwatch.GetTimestamp();
+                await _store.SaveAsync(_state, token);
+                saveMs = (Stopwatch.GetTimestamp() - saveStart) * 1000.0 / Stopwatch.Frequency;
+            }
+        }
+        catch
+        {
+            changed = true; // Publish the failure notice even when the tick itself never completed.
+            _notice = "操作失败；请检查网络、来源或播放器配置后重试";
+            if (_initialized)
+                try { SaveActiveContext(); await _store.SaveAsync(_state, CancellationToken.None); } catch { }
+            throw;
+        }
+        finally
+        {
+            PerfLog.Write("execute-op", FormattableString.Invariant(
+                $"op={op} changed={(changed ? 1 : 0)} gate_ms={gateMs:F1} action_ms={(Stopwatch.GetTimestamp() - actionStart) * 1000.0 / Stopwatch.Frequency:F1} save_ms={saveMs:F1} entries={_state.Entries.Count} queue={_state.Queue.Count}"));
+            if (changed) PublishSnapshot();
+            _gate.Release();
+            if (changed) Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void PublishSnapshot() => Volatile.Write(ref _snapshot, new(_state.Entries.ToArray(), _state.Sources.ToArray(),
+        _state.Queue.ToArray(), _state.Playback, _notice, _recoveryPending, _recoveryPending ? _retryAt : null,
+        _activePlayback is not null && !_recoveryPending, _media, _state.ActiveSource, CreateRoamingSnapshot(),
+        ManualItems.ToArray(), _state.ActiveSource == PlaybackSource.Manual ? _state.Playback : _state.ManualPlayback,
+        new(_state.Agent.Playlists.ToArray(), _state.Agent.Tasks.ToArray(), _state.Agent.QueueRevision,
+            _preparedQueue is { Waiting: true })));
 
     public async ValueTask DisposeAsync()
     {
