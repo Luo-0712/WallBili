@@ -351,9 +351,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     private void LibraryChanged(object? sender, EventArgs args)
     {
+        // On the dispatcher thread the refresh must be immediate: callers on this thread (ticks,
+        // command continuations, tests) read the rows right after the awaited operation returns.
+        // Cross-thread bursts (agent operations, roaming, player-ended) coalesce into one refresh per
+        // dispatcher turn — Refresh re-reads the latest snapshot, so nothing is lost, only duplicated.
         if (_dispatcher.CheckAccess()) Refresh();
-        else _dispatcher.BeginInvoke(Refresh);
+        else if (System.Threading.Interlocked.Exchange(ref _refreshQueued, 1) == 0)
+            _dispatcher.BeginInvoke(() =>
+            {
+                System.Threading.Volatile.Write(ref _refreshQueued, 0);
+                Refresh();
+            });
     }
+    private int _refreshQueued;
     internal void Refresh()
     {
         if (_refreshing) return;
