@@ -30,6 +30,16 @@ internal sealed class LibraryFixture : IAsyncDisposable
     }
 }
 
+/// <summary>In-memory store that counts whole-library rewrites, for tests about save traffic.</summary>
+internal sealed class CountingStore : ILibraryStore
+{
+    private LibraryState _state = new();
+    public int Saves;
+    public Task<LibraryState> LoadAsync(CancellationToken cancellationToken = default) => Task.FromResult(_state);
+    public Task SaveAsync(LibraryState state, CancellationToken cancellationToken = default)
+    { _state = state; Saves++; return Task.CompletedTask; }
+}
+
 internal sealed class TestContent : IContentClient
 {
     public const string A = "BV1test000001", B = "BV1test000002", C = "BV1test000003", D = "BV1test000004";

@@ -139,6 +139,26 @@ public sealed class RecoveryTests
         Assert.Equal(TimeSpan.FromSeconds(16), Assert.Single(player.Loads).Position);
     }
 
+    [Fact]
+    public async Task IdleCheckpointsSkipTheWholeLibraryRewriteAndProgressDoesNot()
+    {
+        var clock = new Clock(); var store = new CountingStore(); var player = new TestPlayer();
+        await using var session = new LibrarySession(new TestContent(), store, player, clock);
+        await session.InitializeAsync(Token);
+        await session.ImportCollectionAsync(new(1, 10), Token);
+        await session.EnqueueAsync(session.Snapshot.Entries.Select(e => e.Key), Token);
+        await session.PlayAsync(token: Token);
+        player.Position = TimeSpan.FromSeconds(5);
+        await session.CheckpointAsync(Token); // First capture of new progress: this one must save.
+        var saves = store.Saves;
+        await session.CheckpointAsync(Token); // The same position again: nothing moved.
+        await session.RetryRecoveryAsync(token: Token);
+        Assert.Equal(saves, store.Saves); // An idle tick neither rewrites the library nor re-publishes.
+        player.Position = TimeSpan.FromSeconds(6);
+        await session.CheckpointAsync(Token);
+        Assert.Equal(saves + 1, store.Saves); // Real progress is persisted.
+    }
+
     private sealed class Clock : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = new(2026, 10, 16, 0, 0, 0, TimeSpan.Zero);
